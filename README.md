@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/radd-github-banner.png" alt="Radd (رد) – AI review reply engine" width="100%">
+  <img src="docs/radd-github-banner.svg" alt="Radd (رد) – AI review reply engine" width="100%">
 </p>
 
 <p align="center">
@@ -7,6 +7,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white">
   <img alt="Supabase" src="https://img.shields.io/badge/Supabase-Postgres-3ECF8E?logo=supabase&logoColor=white">
   <img alt="Zod" src="https://img.shields.io/badge/validation-Zod-3E67B1">
+  <img alt="Languages" src="https://img.shields.io/badge/replies-Egyptian%20Arabic%20%C2%B7%20English-0F5E63">
   <img alt="Eval suite" src="https://img.shields.io/badge/prompt%20eval-30%2F30-F5A623">
 </p>
 
@@ -16,7 +17,13 @@
 
 Radd is a multi-tenant SaaS for local businesses (cafés, restaurants, clinics, retail) in Egypt and the wider MENA region. It watches a business's Google Business Profile for new reviews, classifies them, drafts a reply in the brand's voice (including natural **Egyptian Arabic**), checks that draft against deterministic safety rules, and sends the owner a one-tap approval link by email or Telegram. When the owner approves or edits the reply, Radd publishes it to Google.
 
-> **Status:** feature-complete MVP, developed and tested locally against a built-in mock of the Google Business Profile API. Live Google access depends on Google's API access and OAuth verification process. See [Roadmap](#roadmap).
+> **Status:** feature-complete MVP, developed and tested locally against a built-in mock of the Google Business Profile API. Live Google access depends on Google's API access and OAuth verification process.
+
+<p align="center">
+  <img src="docs/radd-flow.svg" alt="Illustration of the Radd flow: the owner receives an alert, approves with one tap, and the reply is published on Google" width="100%">
+  <br>
+  <sub>Illustration of the three steps (not a real screenshot).</sub>
+</p>
 
 ---
 
@@ -24,16 +31,21 @@ Radd is a multi-tenant SaaS for local businesses (cafés, restaurants, clinics, 
 
 - [Why Radd](#why-radd)
 - [How it works](#how-it-works)
+- [Example behavior](#example-behavior)
 - [Features](#features)
+- [Brand voice](#brand-voice)
 - [Tech stack](#tech-stack)
 - [Architecture](#architecture)
 - [Safety and security](#safety-and-security)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
+- [Routes and endpoints](#routes-and-endpoints)
 - [Verification and evaluation](#verification-and-evaluation)
 - [Project structure](#project-structure)
 - [Data model](#data-model)
-- [Roadmap](#roadmap)
+- [Draft lifecycle](#draft-lifecycle)
+- [FAQ](#faq)
+- [Brand assets](#brand-assets)
 - [Notes on Google branding](#notes-on-google-branding)
 - [Author](#author)
 
@@ -81,6 +93,35 @@ sequenceDiagram
     App->>GBP: Publish reply
 ```
 
+### The AI pipeline
+
+```mermaid
+flowchart LR
+    A[New review] --> B[Classifier<br/>language · sentiment · urgency · category · flags]
+    B --> C[Drafter<br/>brand profile + examples]
+    C --> D{Deterministic<br/>validator}
+    D -- passes --> E[Draft stored<br/>+ token hash]
+    D -- blocked --> F[Rejected<br/>never reaches the owner]
+    E --> G[Owner notified<br/>Email / Telegram]
+    B -. flagged: medical · legal · refund · injection .-> H[Marked for careful review]
+    H --> E
+```
+
+---
+
+## Example behavior
+
+Illustrative examples of how different reviews are handled:
+
+| Review | What Radd does |
+| :--- | :--- |
+| Positive review in Egyptian Arabic | Detects `ar`, drafts a warm reply in natural dialect using the brand tone and signature |
+| English review with a mixed complaint | Detects the language, acknowledges the issue, invites the customer to contact the business at the official number. No promises or compensation |
+| Review containing instructions such as "ignore all previous instructions" | Treated as untrusted data, flagged `injection_suspected`, marked for careful review |
+| Star-only review with no text | Drafts a short thank-you without inventing details of the visit |
+| Review demanding a refund or mentioning legal action | Flagged `refund` or `legal`, requires careful owner review, and the validator blocks any refund or compensation promise in the draft |
+| Review mentioning an allergy or illness | Flagged `medical`, marked for careful review, no medical claims in the reply |
+
 ---
 
 ## Features
@@ -108,6 +149,30 @@ sequenceDiagram
 - Reviews answered %, approved-without-edit %, pending count, active notification channel.
 - Full review and reply timeline with ratings, languages, flags and model versions.
 
+<!--
+Add real screenshots to docs/screenshots/ and uncomment:
+
+| Dashboard | Onboarding | One-tap approval |
+| :---: | :---: | :---: |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Onboarding](docs/screenshots/onboarding.png) | ![Approval page](docs/screenshots/approve.png) |
+-->
+
+---
+
+## Brand voice
+
+Each business configures how Radd speaks during onboarding. The drafter uses these settings for every reply:
+
+| Setting | What it controls |
+| :--- | :--- |
+| Tone | Overall voice, for example warm, formal or playful |
+| Dialect | Egyptian Arabic, or other Arabic and English choices |
+| Signature | The sign-off appended to replies |
+| DO list | Things replies should do or mention |
+| DON'T list | Things replies must never say |
+| Example replies | Past replies the owner likes, used as style references |
+| Official contact number | The only phone number a reply is allowed to include |
+
 ---
 
 ## Tech stack
@@ -128,20 +193,40 @@ sequenceDiagram
 
 ## Architecture
 
-```
-Google Business Profile
-        │  poll (cron / manual)
-        ▼
- Ingestor ──▶ Classifier ──▶ Drafter ──▶ Validator ──▶ Draft + token hash (DB)
-                                                           │
-                                                           ▼
-                                              Dispatcher (Email / Telegram)
-                                                           │ magic link
-                                                           ▼
-                                              /approve/[token]  (Approve · Edit · Skip)
-                                                           │
-                                                           ▼
-                                              Publish reply to Google
+```mermaid
+flowchart TB
+    subgraph External
+        G[Google Business Profile]
+        R[Resend email]
+        T[Telegram Bot API]
+        L[LLM provider]
+    end
+
+    subgraph App[Next.js app]
+        C[Cron / Poll now<br/>/api/cron/poll-reviews]
+        I[Ingestor]
+        P[AI pipeline<br/>classifier · drafter · validator]
+        N[Notification dispatcher]
+        A[Approval page + API<br/>/approve/token]
+        D[Dashboard + Onboarding]
+    end
+
+    DB[(Supabase PostgreSQL)]
+
+    C --> I
+    G -- reviews --> I
+    I --> DB
+    I --> P
+    P <--> L
+    P --> DB
+    P --> N
+    N --> R
+    N --> T
+    R -. magic link .-> A
+    T -. magic link .-> A
+    A --> DB
+    A -- publish reply --> G
+    D <--> DB
 ```
 
 Everything is stored in Supabase. Each business is a tenant: locations, brand profiles, reviews and drafts all belong to a `business_id`.
@@ -186,7 +271,7 @@ Apply the schema in `supabase/migrations/0001_init.sql` to your Supabase project
 
 ### Configure environment
 
-Copy your environment file and fill in the values (see [Configuration](#configuration)):
+Copy the example environment file and fill in the values (see [Configuration](#configuration)):
 
 ```bash
 cp .env.example .env
@@ -229,6 +314,20 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://your-domain.com/api/cron/po
 
 ---
 
+## Routes and endpoints
+
+| Route | Type | Purpose |
+| :--- | :--- | :--- |
+| `/dashboard` | Page | Analytics and review timeline, with a **Poll now** button |
+| `/onboarding` | Page | 3-step setup: connect Google, brand voice, notification channel |
+| `/approve/[token]` | Page | One-tap approval page (no login, token-secured) |
+| `/api/google/oauth/*` | API | Google OAuth connect and callback |
+| `/api/cron/poll-reviews` | API | Scheduled review polling (bearer `CRON_SECRET`) |
+| `/api/drafts/[token]` | API | Single-use approval decision: approve, edit, skip |
+| `/api/dashboard/settings` | API | Zod-validated updates for business settings, brand profile and location contact details |
+
+---
+
 ## Verification and evaluation
 
 Each build phase has a runnable verification script, plus a prompt evaluation suite:
@@ -252,7 +351,7 @@ npx tsx --env-file=.env scripts/eval-prompts.ts        # 30-case prompt evaluati
 | Adversarial: prompt injection, refund and legal traps | 4 |
 | Star-only reviews with empty text | 3 |
 
-Current result: **30/30 passing.** These cases were written by the project author, so treat the pass rate as a regression check. Real-world review samples are on the [roadmap](#roadmap).
+Current result: **30/30 passing.** These cases were written by the project author, so treat the pass rate as a regression check on prompt and model changes.
 
 ---
 
@@ -260,6 +359,7 @@ Current result: **30/30 passing.** These cases were written by the project autho
 
 ```text
 review-reply-bot/
+├── docs/                        # banner, logo and illustrations
 ├── scripts/                     # verification + eval runners
 ├── src/
 │   ├── app/
@@ -286,6 +386,52 @@ review-reply-bot/
 
 ## Data model
 
+```mermaid
+erDiagram
+    BUSINESSES ||--o{ LOCATIONS : has
+    BUSINESSES ||--o| GOOGLE_CONNECTIONS : connects
+    BUSINESSES ||--o| BRAND_PROFILES : configures
+    LOCATIONS ||--o{ REVIEWS : receives
+    REVIEWS ||--o{ DRAFTS : gets
+
+    BUSINESSES {
+        uuid id
+        text name
+        text slug
+        text plan
+    }
+    GOOGLE_CONNECTIONS {
+        text status
+        text encrypted_tokens
+    }
+    LOCATIONS {
+        text google_account_id
+        text google_location_id
+        text contact_phone
+        bool polling_enabled
+    }
+    BRAND_PROFILES {
+        text tone
+        text dialect
+        text signature
+        text do_list
+        text dont_list
+        text example_replies
+    }
+    REVIEWS {
+        text google_review_id
+        int rating
+        text text
+        text language
+        text flags
+    }
+    DRAFTS {
+        text body
+        text status
+        text approval_token_hash
+    }
+```
+
 | Table | Purpose |
 | :--- | :--- |
 | `businesses` | Tenant root: name, slug, plan, notification settings |
@@ -293,29 +439,66 @@ review-reply-bot/
 | `locations` | Store branches: Google account/location IDs, contact phone, polling toggle |
 | `brand_profiles` | Tone, dialect, signature, do/don't rules, example replies |
 | `reviews` | Raw review text, rating, reviewer, detected language, safety flags |
-| `drafts` | Generated replies, status (`pending`, `approved`, `edited`, `skipped`, `posted`, `failed`), token hash |
+| `drafts` | Generated replies, status, and the approval token hash |
 
 ---
 
-## Roadmap
+## Draft lifecycle
 
-Done:
-- [x] Multi-tenant schema and token cryptography
-- [x] Google OAuth, location discovery and review ingestion (with mock client)
-- [x] Classifier, drafter and deterministic validator
-- [x] Email and Telegram notifications with one-tap approval
-- [x] Dashboard, onboarding and 30-case prompt evaluation
+```mermaid
+stateDiagram-v2
+    [*] --> pending: draft created and validated
+    pending --> approved: Approve
+    pending --> edited: Edit and post
+    pending --> skipped: Skip
+    approved --> posted: published to Google
+    edited --> posted: published to Google
+    approved --> failed: publish error
+    edited --> failed: publish error
+    posted --> [*]
+    skipped --> [*]
+```
 
-Next:
-- [ ] Live Google Business Profile access (API access request and OAuth verification)
-- [ ] Safer publishing state machine: `approved → posting → posted | failed`, with retries
-- [ ] Approval-link expiry
-- [ ] Locking so overlapping cron runs cannot process the same review twice
-- [ ] Evaluation set built from real reviews, and more Arabic spelling variants in the validator
-- [ ] Tenant-isolation tests (RLS) and encrypted-at-rest refresh tokens review
-- [ ] Billing, trials, and handling for revoked Google access
-- [ ] WhatsApp approval channel
-- [ ] Multi-location management
+The `pending` check is atomic and the token is single-use: once a decision is made, any further request with the same link is rejected.
+
+---
+
+## FAQ
+
+**Does Radd post replies automatically?**
+No. Every reply needs the owner's explicit approve, edit or skip.
+
+**What happens if a review tries to manipulate the AI?**
+The review text is isolated as untrusted data, the classifier flags it, and the validator checks the output regardless.
+
+**Can it run without API keys?**
+Yes. Mock clients for Google, notifications and the LLM let you run and test the complete flow locally.
+
+**Which languages are supported?**
+Egyptian Arabic, English, and mixed Arabic and English reviews, plus star-only reviews with no text.
+
+**Can a reply include a phone number or a discount?**
+Only the location's official contact number is allowed. Discounts, vouchers and refund promises are blocked.
+
+**Which AI provider does it use?**
+The AI layer is pluggable (Anthropic Claude, OpenAI or Google Gemini).
+
+---
+
+## Brand assets
+
+| Asset | File |
+| :--- | :--- |
+| Banner | `docs/radd-github-banner.svg` |
+| Flow illustration | `docs/radd-flow.svg` |
+| Lockup (light) | `docs/radd-lockup-light.svg` |
+| Lockup (dark) | `docs/radd-lockup-dark.svg` |
+| Lockup (mono) | `docs/radd-lockup-mono.svg` |
+| App icon | `docs/radd-icon.svg` |
+
+<p align="center">
+  <img src="docs/radd-icon.svg" alt="Radd app icon" width="96">
+</p>
 
 ---
 
