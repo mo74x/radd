@@ -1,10 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { googleGBP, GoogleAuthRevokedError } from '@/lib/google/client';
+import { processReviewAndCreateDraft } from '@/lib/ai/pipeline';
+import { sendOwnerNotification } from '@/lib/notifications/dispatcher';
+import { BusinessRow, LocationRow, ReviewRow } from '@/types/database';
 
 export interface PollSummary {
   locationsPolled: number;
   newReviewsInserted: number;
+  draftsCreated: number;
+  notificationsSent: number;
   newReviewIds: string[];
   errors: { locationId: string; error: string }[];
 }
@@ -13,13 +18,8 @@ export async function pollAllActiveLocations(batchSize = 25): Promise<PollSummar
   const { data: locations, error: locErr } = await supabaseAdmin
     .from('locations')
     .select(`
-      id,
-      business_id,
-      google_account_id,
-      google_location_id,
-      display_name,
-      last_review_update_time,
-      businesses!inner ( id, status )
+      *,
+      businesses!inner (*)
     `)
     .eq('is_polling_enabled', true)
     .eq('businesses.status', 'active')
@@ -33,11 +33,15 @@ export async function pollAllActiveLocations(batchSize = 25): Promise<PollSummar
   const summary: PollSummary = {
     locationsPolled: 0,
     newReviewsInserted: 0,
+    draftsCreated: 0,
+    notificationsSent: 0,
     newReviewIds: [],
     errors: [],
   };
 
   for (const loc of locations ?? []) {
+    const business = (loc as any).businesses as BusinessRow;
+
     try {
       const fetchedReviews = await googleGBP.listReviews(
         loc.business_id,
@@ -47,7 +51,6 @@ export async function pollAllActiveLocations(batchSize = 25): Promise<PollSummar
 
       summary.locationsPolled += 1;
 
-      // Only ingest reviews that do not already have an owner reply on Google
       const unanswered = fetchedReviews.filter((r) => !r.hasExistingReply);
 
       for (const rev of unanswered) {
@@ -69,8 +72,8 @@ export async function pollAllActiveLocations(batchSize = 25): Promise<PollSummar
               ignoreDuplicates: true,
             }
           )
-          .select('id')
-          .maybeSingle();
+          .select('*')
+          .maybeSingle<ReviewRow>();
 
         if (insertErr) {
           throw new Error(`Failed inserting review ${rev.googleReviewId}: ${insertErr.message}`);
@@ -79,6 +82,25 @@ export async function pollAllActiveLocations(batchSize = 25): Promise<PollSummar
         if (inserted?.id) {
           summary.newReviewsInserted += 1;
           summary.newReviewIds.push(inserted.id);
+
+          // Automatically run Phase 2 (Drafting) + Phase 3 (Notification)
+          const pipelineOut = await processReviewAndCreateDraft(inserted.id);
+          summary.draftsCreated += 1;
+
+          const { data: updatedReview } = await supabaseAdmin
+            .from('reviews')
+            .select('*')
+            .eq('id', inserted.id)
+            .single<ReviewRow>();
+
+          await sendOwnerNotification({
+            business,
+            location: loc as LocationRow,
+            review: updatedReview ?? inserted,
+            draft: pipelineOut.draft,
+            approvalUrl: pipelineOut.approvalUrl,
+          });
+          summary.notificationsSent += 1;
         }
       }
 
