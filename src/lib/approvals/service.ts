@@ -3,6 +3,7 @@ import { generateApprovalToken, hashApprovalToken } from '@/lib/crypto/tokens';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { googleGBP } from '@/lib/google/client';
 import { sendOwnerNotification } from '@/lib/notifications/dispatcher';
+import { validateDraftReply } from '@/lib/ai/validator';
 import {
   BusinessRow,
   DraftRow,
@@ -11,6 +12,15 @@ import {
 } from '@/types/database';
 
 export type ApprovalAction = 'approve' | 'edit' | 'skip';
+
+export class ConfirmationRequiredError extends Error {
+  warnings: string[];
+  constructor(warnings: string[]) {
+    super(`Restricted phrasing detected: ${warnings.join('; ')}`);
+    this.name = 'ConfirmationRequiredError';
+    this.warnings = warnings;
+  }
+}
 
 export interface ApprovalContext {
   draft: DraftRow;
@@ -81,12 +91,14 @@ export async function executeApprovalDecision(params: {
   rawToken: string;
   action: ApprovalAction;
   editedBody?: string;
+  confirmWarnings?: boolean;
 }): Promise<{
   status: DraftRow['status'];
   finalBody: string | null;
   postedAt: string | null;
+  warnings?: string[];
 }> {
-  const { rawToken, action, editedBody } = params;
+  const { rawToken, action, editedBody, confirmWarnings = false } = params;
   const ctx = await getApprovalContextByToken(rawToken);
 
   if (!ctx) {
@@ -134,7 +146,28 @@ export async function executeApprovalDecision(params: {
     action === 'edit' ? (editedBody ?? '').trim() : ctx.draft.body.trim();
 
   if (finalReply.length < 5) {
-    throw new Error('Reply text cannot be empty.');
+    throw new Error('Reply text cannot be empty (must be at least 5 characters).');
+  }
+
+  // 2b. Safety validation for Owner Edits (warning mode)
+  let ownerWarnings: string[] = [];
+  if (action === 'edit') {
+    const validation = validateDraftReply({
+      draftText: finalReply,
+      location: ctx.location,
+      isOwnerEdit: true,
+    });
+
+    if (!validation.valid) {
+      throw new Error(`Cannot post reply: ${validation.reasons.join(', ')}`);
+    }
+
+    if (validation.warnings.length > 0) {
+      ownerWarnings = validation.warnings;
+      if (!confirmWarnings) {
+        throw new ConfirmationRequiredError(validation.warnings);
+      }
+    }
   }
 
   // 3. Atomically claim the pending draft with 'posting' status before calling Google API
@@ -183,6 +216,7 @@ export async function executeApprovalDecision(params: {
       status: 'posted',
       finalBody: finalReply,
       postedAt,
+      warnings: ownerWarnings.length > 0 ? ownerWarnings : undefined,
     };
   } catch (err: any) {
     const nextRetryAt = computeNextRetryAt(nextAttempt);

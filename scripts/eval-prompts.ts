@@ -75,6 +75,8 @@ const testLocation: LocationRow = {
   is_polling_enabled: true,
   last_polled_at: null,
   last_review_update_time: null,
+  poll_lock_until: null,
+  poll_lock_token: null,
   created_at: new Date().toISOString(),
 };
 

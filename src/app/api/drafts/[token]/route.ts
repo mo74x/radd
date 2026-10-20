@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
+  ConfirmationRequiredError,
   executeApprovalDecision,
   getApprovalContextByToken,
 } from '@/lib/approvals/service';
@@ -9,6 +10,7 @@ import {
 const DecisionBodySchema = z.object({
   action: z.enum(['approve', 'edit', 'skip']),
   editedBody: z.string().optional(),
+  confirmWarnings: z.boolean().optional(),
 });
 
 const SECURITY_HEADERS = {
@@ -54,10 +56,23 @@ export async function POST(
       rawToken: token,
       action: parsed.data.action,
       editedBody: parsed.data.editedBody,
+      confirmWarnings: parsed.data.confirmWarnings,
     });
 
     return NextResponse.json({ ok: true, ...result }, { headers: SECURITY_HEADERS });
   } catch (err: any) {
+    if (err instanceof ConfirmationRequiredError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          requiresConfirmation: true,
+          warnings: err.warnings,
+          error: err.message,
+        },
+        { status: 400, headers: SECURITY_HEADERS }
+      );
+    }
+
     return NextResponse.json(
       { error: err.message },
       { status: 400, headers: SECURITY_HEADERS }

@@ -19,13 +19,14 @@ export default function ApprovalActions({
   const [isEditing, setIsEditing] = useState(false);
   const [editedText, setEditedText] = useState(initialDraftBody);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [pendingWarnings, setPendingWarnings] = useState<string[]>([]);
   const [resultState, setResultState] = useState<{
     status: string;
     finalBody: string | null;
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  async function handleAction(action: 'approve' | 'edit' | 'skip') {
+  async function handleAction(action: 'approve' | 'edit' | 'skip', confirmWarnings = false) {
     setLoadingAction(action);
     setErrorMsg(null);
 
@@ -36,14 +37,20 @@ export default function ApprovalActions({
         body: JSON.stringify({
           action,
           editedBody: action === 'edit' ? editedText : undefined,
+          confirmWarnings: action === 'edit' ? confirmWarnings : undefined,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
+        if (data.requiresConfirmation && Array.isArray(data.warnings)) {
+          setPendingWarnings(data.warnings);
+          return;
+        }
         throw new Error(data.error || 'Failed to process action');
       }
 
+      setPendingWarnings([]);
       setResultState({
         status: data.status,
         finalBody: data.finalBody,
@@ -137,7 +144,10 @@ export default function ApprovalActions({
             dir="auto"
             rows={4}
             value={editedText}
-            onChange={(e) => setEditedText(e.target.value)}
+            onChange={(e) => {
+              setEditedText(e.target.value);
+              if (pendingWarnings.length > 0) setPendingWarnings([]);
+            }}
             className="w-full rounded-lg border border-gray-300 bg-white p-3 text-base text-gray-900 focus:border-emerald-600 focus:outline-none"
           />
         ) : (
@@ -146,6 +156,46 @@ export default function ApprovalActions({
           </p>
         )}
       </div>
+
+      {pendingWarnings.length > 0 && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 shadow-sm">
+          <div className="flex items-center gap-2 text-sm font-bold text-amber-900">
+            <span>⚠️</span>
+            <span>تنبيه: تم رصد عبارات مقيدة في الرد (Restricted Phrasing Detected)</span>
+          </div>
+          <p className="mt-1 text-xs text-amber-800">
+            يحتوي النص على عبارات قد تخالف معايير الردود التلقائية (مثل تقديم تعويض مالي، خصم، أو روابط خارجية):
+          </p>
+          <ul className="mt-2 list-disc list-inside space-y-1 text-xs font-semibold text-amber-950">
+            {pendingWarnings.map((warn, i) => (
+              <li key={i}>{warn}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs font-medium text-amber-800">
+            بصفتك صاحب العمل، يمكنك النشر على مسؤوليتك أو تعديل النص لإزالة هذه العبارات.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              disabled={loadingAction !== null}
+              onClick={() => handleAction('edit', true)}
+              className="rounded-lg bg-amber-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-amber-700 disabled:opacity-50"
+            >
+              {loadingAction === 'edit'
+                ? 'جاري النشر...'
+                : '✅ تأكيد ونشر الرد على أي حال (Confirm & Post Anyway)'}
+            </button>
+            <button
+              type="button"
+              disabled={loadingAction !== null}
+              onClick={() => setPendingWarnings([])}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              ✏️ تعديل النص (Go Back & Edit)
+            </button>
+          </div>
+        </div>
+      )}
 
       {errorMsg && (
         <div className="rounded-lg bg-red-100 p-3 text-sm font-medium text-red-800">
