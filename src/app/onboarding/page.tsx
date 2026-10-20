@@ -12,7 +12,10 @@ export default function OnboardingPage() {
   const [businessId, setBusinessId] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [googleConnected, setGoogleConnected] = useState(false);
+  const [googleStatus, setGoogleStatus] = useState<'active' | 'revoked' | 'none'>('none');
+  const [googleLastError, setGoogleLastError] = useState<string | null>(null);
   const [locationsCount, setLocationsCount] = useState(0);
+  const [privacyLoading, setPrivacyLoading] = useState(false);
 
   const [notificationChannel, setNotificationChannel] = useState<'email' | 'telegram'>('email');
   const [notificationTarget, setNotificationTarget] = useState('');
@@ -36,7 +39,10 @@ export default function OnboardingPage() {
           data.business.notification_channel === 'telegram' ? 'telegram' : 'email'
         );
         setNotificationTarget(data.business.notification_target || '');
-        setGoogleConnected(data.googleConnection?.status === 'active');
+        const connStatus = data.googleConnection?.status ?? 'none';
+        setGoogleStatus(connStatus);
+        setGoogleConnected(connStatus === 'active');
+        setGoogleLastError(data.googleConnection?.last_error ?? null);
         setLocationsCount(data.locations?.length || 0);
         setContactPhone(data.locations?.[0]?.contact_phone || '');
 
@@ -53,6 +59,58 @@ export default function OnboardingPage() {
     }
     loadSettings();
   }, []);
+
+  async function handleDisconnectGoogle() {
+    if (!businessId) return;
+    if (!window.confirm('Are you sure you want to disconnect your Google account? Auto-replying and polling will be paused.')) {
+      return;
+    }
+    setPrivacyLoading(true);
+    try {
+      const res = await fetch('/api/dashboard/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'disconnect_google', businessId }),
+      });
+      if (res.ok) {
+        setGoogleConnected(false);
+        setGoogleStatus('revoked');
+        setStatusMsg('✅ Google account disconnected. Polling has been safely paused.');
+      }
+    } finally {
+      setPrivacyLoading(false);
+    }
+  }
+
+  async function handleDisconnectAndDeleteData() {
+    if (!businessId) return;
+    const confirmed = window.confirm(
+      '⚠️ PERMANENT DATA PURGE WARNING:\n\n' +
+      'This will permanently disconnect your Google Account and DELETE all synced reviews, drafts, brand profiles, and locations from this database.\n\n' +
+      'Are you sure you want to proceed?'
+    );
+    if (!confirmed) return;
+
+    setPrivacyLoading(true);
+    try {
+      const res = await fetch('/api/dashboard/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'disconnect_and_delete_data', businessId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setGoogleConnected(false);
+        setGoogleStatus('revoked');
+        setLocationsCount(0);
+        setStatusMsg('🗑️ All Google data, drafts, locations, and tokens have been permanently deleted.');
+      } else {
+        setStatusMsg(`❌ Error: ${data.error}`);
+      }
+    } finally {
+      setPrivacyLoading(false);
+    }
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -123,26 +181,62 @@ export default function OnboardingPage() {
 
         {/* Step 1: Connect Google Business Profile */}
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">
-                Step 1
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">
+                  Step 1
+                </span>
+                {googleStatus === 'revoked' && (
+                  <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">
+                    Connection Revoked
+                  </span>
+                )}
+              </div>
               <h2 className="text-lg font-bold text-gray-900">
                 Google Business Profile Connection
               </h2>
               <p className="mt-1 text-sm text-gray-600">
-                {googleConnected
+                {googleStatus === 'active'
                   ? `✅ Connected (${locationsCount} location synced)`
+                  : googleStatus === 'revoked'
+                  ? '⚠️ Access was revoked or expired. Reconnection is required to resume review syncing.'
                   : 'Connect your Google account so we can fetch new reviews and post approved replies.'}
               </p>
+              {googleLastError && googleStatus === 'revoked' && (
+                <p className="mt-1 font-mono text-xs text-rose-600">
+                  Detail: {googleLastError}
+                </p>
+              )}
             </div>
-            <a
-              href={`/api/google/oauth/connect?businessId=${businessId}`}
-              className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-            >
-              {googleConnected ? 'Reconnect Google' : 'Connect Google Account'}
-            </a>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={`/api/google/oauth/connect?businessId=${businessId}`}
+                className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm ${
+                  googleStatus === 'revoked'
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                {googleConnected
+                  ? 'Reconnect Google'
+                  : googleStatus === 'revoked'
+                  ? '⚠️ Reconnect Google Now'
+                  : 'Connect Google Account'}
+              </a>
+
+              {googleConnected && (
+                <button
+                  type="button"
+                  onClick={handleDisconnectGoogle}
+                  disabled={privacyLoading}
+                  className="rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Disconnect
+                </button>
+              )}
+            </div>
           </div>
         </section>
 
@@ -335,6 +429,44 @@ export default function OnboardingPage() {
             {saving ? 'Saving Settings...' : 'Save Brand Voice & Settings'}
           </button>
         </form>
+
+        {/* Step 4: Data Privacy & Google Account Lifecycle */}
+        <section
+          id="privacy"
+          className="rounded-2xl border border-rose-200 bg-white p-6 shadow-sm"
+        >
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider text-rose-700">
+              Data Privacy & Google Lifecycle
+            </span>
+            <h2 className="text-lg font-bold text-gray-900">
+              Manage Connection & Stored Data (إدارة الخصوصية والبيانات)
+            </h2>
+            <p className="mt-1 text-sm text-gray-600 leading-relaxed">
+              In full compliance with <strong>Google API User Data Policy</strong> and data privacy standards, you have full control over your business data. You can disconnect your Google account to pause automation, or permanently delete all synced reviews, drafts, and OAuth credentials.
+            </p>
+          </div>
+
+          <div className="mt-5 flex flex-col gap-3 rounded-xl border border-gray-100 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-800">
+                Disconnect & Permanently Delete All Data (فصل الحساب وحذف جميع البيانات)
+              </p>
+              <p className="text-xs text-gray-500">
+                Instantly purges all review records, AI drafts, locations, and revokes encrypted OAuth tokens.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleDisconnectAndDeleteData}
+              disabled={privacyLoading}
+              className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 disabled:opacity-50"
+            >
+              {privacyLoading ? 'Purging Data...' : '🗑️ Disconnect & Delete Data'}
+            </button>
+          </div>
+        </section>
       </div>
     </main>
   );

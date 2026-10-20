@@ -25,17 +25,30 @@ export default async function DashboardPage() {
     );
   }
 
-  const { data: reviews } = await supabaseAdmin
-    .from('reviews')
-    .select(`
-      *,
-      locations ( display_name ),
-      drafts (*)
-    `)
-    .eq('business_id', business.id)
-    .order('created_at', { ascending: false });
+  const [reviewsRes, connRes] = await Promise.all([
+    supabaseAdmin
+      .from('reviews')
+      .select(`
+        *,
+        locations ( display_name ),
+        drafts (*)
+      `)
+      .eq('business_id', business.id)
+      .order('created_at', { ascending: false }),
+    supabaseAdmin
+      .from('google_connections')
+      .select('status, google_email, last_error, updated_at')
+      .eq('business_id', business.id)
+      .maybeSingle(),
+  ]);
 
-  const allReviews = reviews ?? [];
+  const allReviews = reviewsRes.data ?? [];
+  const googleConn = connRes.data;
+  const isRevoked =
+    business.status === 'revoked' ||
+    googleConn?.status === 'revoked' ||
+    (googleConn?.status === 'error' && Boolean(googleConn.last_error?.includes('revoked')));
+
   const totalReviews = allReviews.length;
 
   let postedCount = 0;
@@ -73,7 +86,13 @@ export default async function DashboardPage() {
         {/* Header */}
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
-            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                isRevoked
+                  ? 'bg-rose-100 text-rose-800'
+                  : 'bg-emerald-100 text-emerald-800'
+              }`}
+            >
               {business.plan.toUpperCase()} • {business.status.toUpperCase()}
             </span>
             <h1 className="mt-1 text-2xl font-bold text-gray-900">
@@ -88,9 +107,56 @@ export default async function DashboardPage() {
             >
               ⚙️ Brand Voice & Settings
             </Link>
-            <PollNowButton />
+            <PollNowButton isRevoked={isRevoked} />
           </div>
         </div>
+
+        {/* Reconnection Alert Banner when Google Connection is Revoked / Expired */}
+        {isRevoked && (
+          <div
+            id="google-reconnection-banner"
+            className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm"
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">⚠️</span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold text-rose-900">
+                      Google Business Profile Disconnected (تم إلغاء ربط حساب Google)
+                    </h2>
+                    <span className="rounded-full bg-rose-200 px-2 py-0.5 text-xs font-semibold text-rose-800">
+                      Sync Paused
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-rose-700">
+                    Google OAuth authorization has expired or was revoked. Review polling and reply publishing are safely paused.
+                  </p>
+                  {googleConn?.last_error && (
+                    <p className="mt-1 font-mono text-xs text-rose-600">
+                      Reason: {googleConn.last_error}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-shrink-0 items-center gap-2">
+                <Link
+                  href={`/api/google/oauth/connect?businessId=${business.id}`}
+                  className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-rose-700"
+                >
+                  🔗 Reconnect Google (إعادة ربط الحساب)
+                </Link>
+                <Link
+                  href="/onboarding#privacy"
+                  className="rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm font-medium text-rose-800 hover:bg-rose-50"
+                >
+                  Privacy Settings
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Section 10 Headline Metrics */}
         <div className="grid gap-4 sm:grid-cols-4">

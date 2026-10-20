@@ -34,6 +34,7 @@ function hasLiveTelegramToken(): boolean {
 }
 
 let dispatchedNotificationCount = 0;
+let reconnectionNotificationCount = 0;
 
 export function getDispatchedNotificationCount(): number {
   return dispatchedNotificationCount;
@@ -41,6 +42,14 @@ export function getDispatchedNotificationCount(): number {
 
 export function resetDispatchedNotificationCount(): void {
   dispatchedNotificationCount = 0;
+}
+
+export function getReconnectionNotificationCount(): number {
+  return reconnectionNotificationCount;
+}
+
+export function resetReconnectionNotificationCount(): void {
+  reconnectionNotificationCount = 0;
 }
 
 export async function sendOwnerNotification(
@@ -190,4 +199,123 @@ async function sendTelegramNotification(
   }
 
   return { channel: 'telegram', delivered: true, mode: 'live' };
+}
+
+export interface ReconnectionPayload {
+  business: BusinessRow;
+  reason?: string;
+  reconnectUrl?: string;
+}
+
+export async function sendReconnectionNotification(
+  payload: ReconnectionPayload
+): Promise<NotificationResult> {
+  const { business, reason } = payload;
+  reconnectionNotificationCount++;
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const reconnectUrl =
+    payload.reconnectUrl || `${appUrl}/api/google/oauth/connect?businessId=${business.id}`;
+
+  const subject = `⚠️ Action Required: Reconnect Google Business Profile for ${business.name}`;
+
+  if (business.notification_channel === 'telegram') {
+    const messageText =
+      `⚠️ *تنبيه هام: انقطاع اتصال Google Business Profile*\n\n` +
+      `📍 الحساب: *${business.name}*\n` +
+      `❌ السبب: ${reason || 'انتهت صلاحية الإذن أو تم إلغاؤه (Revoked/Expired)'}\n\n` +
+      `توقفت مزامنة التقييمات مؤقتاً ولن تتمكن المنظومة من جلب تقييمات جديدة أو نشر الردود حتى تتم إعادة الاتصال.`;
+
+    if (!hasLiveTelegramToken() || !business.notification_target) {
+      console.log(
+        `[MOCK TELEGRAM (RECONNECTION ALERT) -> chat_id:${business.notification_target ?? 'unset'}]\n` +
+          `${messageText}\nReconnect Link: ${reconnectUrl}`
+      );
+      return {
+        channel: 'telegram',
+        delivered: true,
+        mode: 'mock-console',
+        detail: reconnectUrl,
+      };
+    }
+
+    const tgUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const res = await fetch(tgUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: business.notification_target,
+        text: messageText,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '🔗 إعادة ربط حساب Google الآن',
+                url: reconnectUrl,
+              },
+            ],
+          ],
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Telegram sendMessage failed: ${await res.text()}`);
+    }
+
+    return { channel: 'telegram', delivered: true, mode: 'live' };
+  }
+
+  // Email Notification
+  if (!hasLiveResendKey() || !business.notification_target) {
+    console.log(
+      `[MOCK EMAIL (RECONNECTION ALERT) -> ${business.notification_target ?? 'owner'}] ${subject}\n` +
+        `  Reason   : ${reason || 'OAuth authorization revoked or expired'}\n` +
+        `  Reconnect: ${reconnectUrl}`
+    );
+    return {
+      channel: 'email',
+      delivered: true,
+      mode: 'mock-console',
+      detail: reconnectUrl,
+    };
+  }
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  const { error } = await resend.emails.send({
+    from: process.env.EMAIL_FROM || 'Review Bot <onboarding@resend.dev>',
+    to: [business.notification_target],
+    subject,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; border: 1px solid #fee2e2; border-radius: 12px; background: #fff;">
+        <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+          <h2 style="margin: 0; color: #991b1b; font-size: 18px;">⚠️ Google Connection Revoked / انقطاع اتصال Google</h2>
+        </div>
+        <p style="font-size: 15px; color: #374151; line-height: 1.5;">
+          The Google Business Profile authorization for <strong>${business.name}</strong> has been revoked or expired.
+        </p>
+        <p style="font-size: 14px; color: #6b7280; background: #f9fafb; padding: 10px 12px; border-radius: 6px; font-family: monospace;">
+          Reason: ${reason || 'OAuth token revoked or expired (invalid_grant / 401 / 403)'}
+        </p>
+        <p style="font-size: 14px; color: #374151; line-height: 1.5;">
+          Review polling and automated response publishing have been safely paused to prevent failed requests. Please reconnect your Google account to restore automated management.
+        </p>
+        <div style="margin: 24px 0 16px;">
+          <a href="${reconnectUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px; padding: 12px 24px; border-radius: 8px;">
+            🔗 Reconnect Google Account (إعادة ربط الحساب) →
+          </a>
+        </div>
+        <p style="font-size: 12px; color: #9ca3af; margin: 0;">
+          If you intentionally disconnected this account, you can ignore this email or manage your settings on the dashboard.
+        </p>
+      </div>
+    `,
+  });
+
+  if (error) {
+    throw new Error(`Resend email failed: ${error.message}`);
+  }
+
+  return { channel: 'email', delivered: true, mode: 'live' };
 }

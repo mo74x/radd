@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { pollAllActiveLocations } from '@/lib/google/ingestor';
+import {
+  disconnectGoogleAccount,
+  disconnectAndDeleteAllData,
+} from '@/lib/google/lifecycle';
 
 const UpdateSettingsSchema = z.object({
   businessId: z.string().uuid(),
@@ -71,6 +75,26 @@ export async function POST(req: NextRequest) {
     if (body.action === 'poll_now') {
       const summary = await pollAllActiveLocations(10);
       return NextResponse.json({ ok: true, summary });
+    }
+
+    // Gracefully disconnect Google Account
+    if (body.action === 'disconnect_google') {
+      const bizId = body.businessId;
+      if (!bizId) {
+        return NextResponse.json({ error: 'Missing businessId' }, { status: 400 });
+      }
+      const result = await disconnectGoogleAccount(bizId);
+      return NextResponse.json({ ok: true, result });
+    }
+
+    // Clean Disconnect & Delete Data flow complying with Google API & GDPR privacy standards
+    if (body.action === 'disconnect_and_delete_data') {
+      const bizId = body.businessId;
+      if (!bizId) {
+        return NextResponse.json({ error: 'Missing businessId' }, { status: 400 });
+      }
+      const result = await disconnectAndDeleteAllData(bizId);
+      return NextResponse.json({ ok: true, result });
     }
 
     const parsed = UpdateSettingsSchema.safeParse(body);

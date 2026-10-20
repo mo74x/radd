@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/lib/google/client.ts
 import 'server-only';
 import { decryptSecret } from '@/lib/crypto/tokens';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { handleGoogleRevocation } from '@/lib/google/lifecycle';
 
 export interface NormalizedLocation {
   googleAccountId: string;
@@ -39,6 +39,10 @@ export class GoogleAuthRevokedError extends Error {
 export class GoogleGBPClient {
   private mockFailCounts: Map<string, number> = new Map();
   private customMockReviews: NormalizedReview[] | null = null;
+  private mockRevokedBusinesses: Map<
+    string,
+    { type: 'invalid_grant' | '401' | '403'; reason?: string }
+  > = new Map();
 
   private get isMock(): boolean {
     return process.env.GOOGLE_API_MODE !== 'live';
@@ -46,6 +50,24 @@ export class GoogleGBPClient {
 
   setCustomMockReviews(reviews: NormalizedReview[] | null): void {
     this.customMockReviews = reviews;
+  }
+
+  /**
+   * For testing: configure mock client to simulate Google OAuth revocation (invalid_grant, 401, 403).
+   */
+  setMockRevocation(
+    businessId: string,
+    simulated: { type: 'invalid_grant' | '401' | '403'; reason?: string } | null
+  ): void {
+    if (!simulated) {
+      this.mockRevokedBusinesses.delete(businessId);
+    } else {
+      this.mockRevokedBusinesses.set(businessId, simulated);
+    }
+  }
+
+  isMockRevoked(businessId: string): boolean {
+    return this.mockRevokedBusinesses.has(businessId);
   }
 
   /**
@@ -61,10 +83,23 @@ export class GoogleGBPClient {
 
   /**
    * Returns a valid access token for the business, refreshing it via Google OAuth if expired.
-   * If the owner revoked access (invalid_grant), marks the connection and business as 'revoked'.
+   * If the owner revoked access (invalid_grant, 401, 403), triggers revocation lifecycle and marks connection 'revoked'.
    */
   async getValidAccessToken(businessId: string): Promise<string> {
-    if (this.isMock) return 'mock_access_token';
+    if (this.isMock) {
+      const simulated = this.mockRevokedBusinesses.get(businessId);
+      if (simulated) {
+        const reason =
+          simulated.reason || `Simulated ${simulated.type} Google OAuth token revocation`;
+        await handleGoogleRevocation({
+          businessId,
+          reason,
+          errorCode: simulated.type,
+        });
+        throw new GoogleAuthRevokedError(businessId, reason);
+      }
+      return 'mock_access_token';
+    }
 
     const { data: conn, error } = await supabaseAdmin
       .from('google_connections')
@@ -100,22 +135,23 @@ export class GoogleGBPClient {
     const tokenData = await res.json();
 
     if (!res.ok) {
-      if (tokenData.error === 'invalid_grant') {
-        await supabaseAdmin
-          .from('google_connections')
-          .update({
-            status: 'revoked',
-            last_error: tokenData.error_description || 'Token revoked by user',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('business_id', businessId);
+      if (
+        tokenData.error === 'invalid_grant' ||
+        tokenData.error === 'unauthorized_client' ||
+        res.status === 401 ||
+        res.status === 403
+      ) {
+        const reason =
+          tokenData.error_description ||
+          tokenData.error ||
+          `Google OAuth refresh rejected with HTTP ${res.status}`;
+        await handleGoogleRevocation({
+          businessId,
+          reason,
+          errorCode: tokenData.error || res.status,
+        });
 
-        await supabaseAdmin
-          .from('businesses')
-          .update({ status: 'revoked', updated_at: new Date().toISOString() })
-          .eq('id', businessId);
-
-        throw new GoogleAuthRevokedError(businessId, 'Google OAuth access was revoked');
+        throw new GoogleAuthRevokedError(businessId, `Google OAuth access was revoked: ${reason}`);
       }
       throw new Error(`Failed to refresh Google token: ${JSON.stringify(tokenData)}`);
     }
@@ -141,6 +177,17 @@ export class GoogleGBPClient {
    */
   async listLocations(businessId: string): Promise<NormalizedLocation[]> {
     if (this.isMock) {
+      const simulated = this.mockRevokedBusinesses.get(businessId);
+      if (simulated) {
+        const reason =
+          simulated.reason || `Simulated ${simulated.type} during listLocations`;
+        await handleGoogleRevocation({
+          businessId,
+          reason,
+          errorCode: simulated.type,
+        });
+        throw new GoogleAuthRevokedError(businessId, reason);
+      }
       return [
         {
           googleAccountId: 'accounts/100998877',
@@ -156,7 +203,21 @@ export class GoogleGBPClient {
     const accRes = await fetch('https://mybusinessaccountmanagement.googleapis.com/v1/accounts', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!accRes.ok) throw new Error(`Failed to list GBP accounts: ${await accRes.text()}`);
+    if (!accRes.ok) {
+      if (accRes.status === 401 || accRes.status === 403) {
+        const errText = await accRes.text();
+        await handleGoogleRevocation({
+          businessId,
+          reason: `Accounts API returned HTTP ${accRes.status}: ${errText}`,
+          errorCode: accRes.status,
+        });
+        throw new GoogleAuthRevokedError(
+          businessId,
+          `Google access revoked or forbidden (${accRes.status})`
+        );
+      }
+      throw new Error(`Failed to list GBP accounts: ${await accRes.text()}`);
+    }
     const accData = await accRes.json();
 
     const locations: NormalizedLocation[] = [];
@@ -195,6 +256,17 @@ export class GoogleGBPClient {
     googleLocationId: string
   ): Promise<NormalizedReview[]> {
     if (this.isMock) {
+      const simulated = this.mockRevokedBusinesses.get(businessId);
+      if (simulated) {
+        const reason =
+          simulated.reason || `Simulated ${simulated.type} during listReviews`;
+        await handleGoogleRevocation({
+          businessId,
+          reason,
+          errorCode: simulated.type,
+        });
+        throw new GoogleAuthRevokedError(businessId, reason);
+      }
       return this.customMockReviews ?? this.getMockReviews();
     }
 
@@ -210,6 +282,18 @@ export class GoogleGBPClient {
     });
 
     if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        const errText = await res.text();
+        await handleGoogleRevocation({
+          businessId,
+          reason: `Reviews API returned HTTP ${res.status}: ${errText}`,
+          errorCode: res.status,
+        });
+        throw new GoogleAuthRevokedError(
+          businessId,
+          `Google access revoked or forbidden (${res.status})`
+        );
+      }
       throw new Error(`GBP listReviews failed (${res.status}): ${await res.text()}`);
     }
 
@@ -236,6 +320,18 @@ export class GoogleGBPClient {
     replyText: string
   ): Promise<void> {
     if (this.isMock) {
+      const simulated = this.mockRevokedBusinesses.get(businessId);
+      if (simulated) {
+        const reason =
+          simulated.reason || `Simulated ${simulated.type} during postReply`;
+        await handleGoogleRevocation({
+          businessId,
+          reason,
+          errorCode: simulated.type,
+        });
+        throw new GoogleAuthRevokedError(businessId, reason);
+      }
+
       const remainingFails = this.mockFailCounts.get(googleReviewId) ?? 0;
       if (remainingFails > 0) {
         this.mockFailCounts.set(googleReviewId, remainingFails - 1);
@@ -260,6 +356,18 @@ export class GoogleGBPClient {
     });
 
     if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        const errText = await res.text();
+        await handleGoogleRevocation({
+          businessId,
+          reason: `Reply API returned HTTP ${res.status}: ${errText}`,
+          errorCode: res.status,
+        });
+        throw new GoogleAuthRevokedError(
+          businessId,
+          `Google access revoked or forbidden (${res.status})`
+        );
+      }
       throw new Error(`Failed to post GBP reply (${res.status}): ${await res.text()}`);
     }
   }
