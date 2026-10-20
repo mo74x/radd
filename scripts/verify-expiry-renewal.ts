@@ -4,7 +4,7 @@ config({ path: '.env.local' });
 config({ path: '.env' });
 
 import { supabaseAdmin } from '../src/lib/supabase/admin';
-import { generateApprovalToken, hashApprovalToken } from '../src/lib/crypto/tokens';
+import { generateApprovalToken } from '../src/lib/crypto/tokens';
 import {
   getApprovalContextByToken,
   executeApprovalDecision,
@@ -205,7 +205,7 @@ async function main() {
 
   // To simulate immediate second renewal, we can generate a known token and test the cooldown guard:
   const testCooldownToken = generateApprovalToken(72);
-  const { data: cooldownDraft } = await supabaseAdmin
+  await supabaseAdmin
     .from('drafts')
     .insert({
       business_id: business.id,

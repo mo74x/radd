@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npx tsx --conditions react-server --test tests/**/*.test.ts"
+    "test": "npx tsx --conditions react-server --test tests/**/*.test.ts",
+    "eval:prompts": "npx tsx --conditions react-server scripts/eval-prompts.ts",
+    "eval:real": "npx tsx --conditions react-server scripts/eval-real-reviews.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
