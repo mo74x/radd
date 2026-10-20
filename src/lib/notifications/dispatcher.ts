@@ -12,6 +12,7 @@ export interface NotificationPayload {
   review: ReviewRow;
   draft: DraftRow;
   approvalUrl: string;
+  isRenewal?: boolean;
 }
 
 export interface NotificationResult {
@@ -46,17 +47,18 @@ export async function sendOwnerNotification(
 async function sendEmailNotification(
   payload: NotificationPayload
 ): Promise<NotificationResult> {
-  const { business, location, review, draft, approvalUrl } = payload;
+  const { business, location, review, draft, approvalUrl, isRenewal } = payload;
   const stars = '★'.repeat(review.rating) + '☆'.repeat(5 - review.rating);
   const warningBadge = review.requires_careful_review
     ? '⚠️ [Requires Careful Review] '
     : '';
+  const renewalPrefix = isRenewal ? '🔄 [Renewed Link] ' : '';
 
-  const subject = `${warningBadge}New ${review.rating}★ Review for ${location.display_name}`;
+  const subject = `${renewalPrefix}${warningBadge}New ${review.rating}★ Review for ${location.display_name}`;
 
   if (!hasLiveResendKey() || !business.notification_target) {
     console.log(
-      `[MOCK EMAIL -> ${business.notification_target ?? 'owner'}] ${subject}\n` +
+      `[MOCK EMAIL${isRenewal ? ' (RENEWAL)' : ''} -> ${business.notification_target ?? 'owner'}] ${subject}\n` +
         `  Reviewer : ${review.reviewer_name} (${stars})\n` +
         `  Draft    : ${draft.body}\n` +
         `  One-Tap  : ${approvalUrl}`
@@ -77,6 +79,13 @@ async function sendEmailNotification(
     html: `
       <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px;">
         <h2 style="margin-top: 0; color: #111827;">${location.display_name}</h2>
+        ${
+          isRenewal
+            ? `<div style="background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 14px;">
+                 <strong>🔄 رابط متجدد (Renewed Magic Link):</strong> تم إنشاء هذا الرابط الجديد بناءً على طلبك بعد انتهاء صلاحية الرابط القديم.
+               </div>`
+            : ''
+        }
         <p style="font-size: 18px; margin: 8px 0;">
           <strong style="color: #f59e0b;">${stars}</strong> by <strong>${review.reviewer_name || 'Customer'}</strong>
         </p>
@@ -116,21 +125,24 @@ async function sendEmailNotification(
 async function sendTelegramNotification(
   payload: NotificationPayload
 ): Promise<NotificationResult> {
-  const { business, location, review, draft, approvalUrl } = payload;
+  const { business, location, review, draft, approvalUrl, isRenewal } = payload;
   const stars = '⭐'.repeat(review.rating);
+  const renewalHeader = isRenewal
+    ? `🔄 *[رابط متجدد / Renewed Magic Link]*\nتم إصدار رابط جديد بناءً على طلبك بعد انتهاء صلاحية الرابط السابق.\n\n`
+    : '';
   const warningLine = review.requires_careful_review
     ? `⚠️ *تنبيه: تقييم يحتاج لمراجعة دقيقة (${review.flags.join(', ') || 'تقييم منخفض'})*\n\n`
     : '';
 
   const messageText =
-    `${warningLine}📍 *${location.display_name}*\n` +
+    `${renewalHeader}${warningLine}📍 *${location.display_name}*\n` +
     `${stars} من *${review.reviewer_name || 'عميل'}*\n\n` +
     `💬 *التقييم:*\n${review.text || '(تقييم بالنجوم فقط بدون تعليق)'}\n\n` +
     `✍️ *الرد المقترح:*\n${draft.body}`;
 
   if (!hasLiveTelegramToken() || !business.notification_target) {
     console.log(
-      `[MOCK TELEGRAM -> chat_id:${business.notification_target ?? 'unset'}]\n${messageText}\nLink: ${approvalUrl}`
+      `[MOCK TELEGRAM${isRenewal ? ' (RENEWAL)' : ''} -> chat_id:${business.notification_target ?? 'unset'}]\n${messageText}\nLink: ${approvalUrl}`
     );
     return {
       channel: 'telegram',

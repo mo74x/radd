@@ -78,6 +78,9 @@ export interface DraftRow {
   final_body: string | null;
   approval_token_hash: string | null;
   token_expires_at: string | null;
+  expires_at: string;
+  last_renewed_at: string | null;
+  renewal_count: number;
   decided_at: string | null;
   posted_at: string | null;
   last_error: string | null;

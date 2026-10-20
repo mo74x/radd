@@ -137,6 +137,7 @@ export async function processReviewAndCreateDraft(
         body: generated.body,
         approval_token_hash: tokenHash,
         token_expires_at: expiresAt,
+        expires_at: expiresAt,
         model: generated.model,
         prompt_version: generated.promptVersion,
       })
@@ -164,6 +165,7 @@ export async function processReviewAndCreateDraft(
       status: 'pending',
       approval_token_hash: tokenHash,
       token_expires_at: expiresAt,
+      expires_at: expiresAt,
       model: generated.model,
       prompt_version: generated.promptVersion,
     })

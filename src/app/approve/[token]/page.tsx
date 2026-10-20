@@ -1,8 +1,18 @@
 /* eslint-disable react-hooks/purity */
+import type { Metadata } from 'next';
 import { getApprovalContextByToken } from '@/lib/approvals/service';
 import ApprovalActions from './ApprovalActions';
+import ExpiredApprovalCard from './ExpiredApprovalCard';
 
-export const dynamic = 'force-dynamic';
+export const metadata: Metadata = {
+  title: 'Approval Review',
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+  },
+  referrer: 'no-referrer',
+};
 
 export default async function ApproveDraftPage({
   params,
@@ -140,9 +150,7 @@ export default async function ApproveDraftPage({
             )}
           </div>
         ) : isExpired ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-amber-900">
-            This approval link has expired.
-          </div>
+          <ExpiredApprovalCard token={token} />
         ) : (
           <ApprovalActions
             token={token}

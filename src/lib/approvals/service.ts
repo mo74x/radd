@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { hashApprovalToken } from '@/lib/crypto/tokens';
+import { generateApprovalToken, hashApprovalToken } from '@/lib/crypto/tokens';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { googleGBP } from '@/lib/google/client';
+import { sendOwnerNotification } from '@/lib/notifications/dispatcher';
 import {
   BusinessRow,
   DraftRow,
@@ -58,9 +59,10 @@ export async function getApprovalContextByToken(
 
   if (!location) return null;
 
+  const expiresAtValue = draft.expires_at || draft.token_expires_at;
   const isExpired = Boolean(
-    draft.token_expires_at &&
-      new Date(draft.token_expires_at).getTime() < Date.now()
+    draft.status === 'expired' ||
+      (expiresAtValue && new Date(expiresAtValue).getTime() <= Date.now())
   );
 
   const isAlreadyDecided = draft.status !== 'pending';
@@ -362,4 +364,168 @@ export async function processFailedAndStuckDrafts(
   }
 
   return summary;
+}
+
+export class RateLimitError extends Error {
+  constructor(message: string, public retryAfterSeconds?: number) {
+    super(message);
+    this.name = 'RateLimitError';
+  }
+}
+
+export function maskNotificationTarget(
+  target: string | null | undefined,
+  channel: string
+): string {
+  if (!target) return `Registered ${channel}`;
+  if (channel === 'email' && target.includes('@')) {
+    const [user, domain] = target.split('@');
+    if (user.length <= 2) return `${user[0]}***@${domain}`;
+    return `${user[0]}***${user[user.length - 1]}@${domain}`;
+  }
+  if (channel === 'telegram') {
+    if (target.length <= 4) return `Telegram (***)`;
+    return `Telegram (***${target.slice(-3)})`;
+  }
+  return target.length > 4 ? `***${target.slice(-4)}` : '***';
+}
+
+export interface RenewalResult {
+  ok: boolean;
+  channel: string;
+  targetMasked: string;
+  expiresAt: string;
+  renewalCount: number;
+}
+
+/**
+ * Renews an approval token for a draft:
+ * 1. Verifies draft exists and is not already finalized.
+ * 2. Enforces per-draft rate limits (cooldown + max renewal threshold).
+ * 3. Generates a fresh 256-bit token + SHA-256 hash.
+ * 4. Atomically replaces the old token hash and sets fresh 72h expires_at.
+ * 5. Dispatches new link strictly to owner notification channel (never exposed in response).
+ */
+export async function renewApprovalToken(
+  rawToken: string
+): Promise<RenewalResult> {
+  const tokenHash = hashApprovalToken(rawToken);
+
+  const { data: draft, error: draftErr } = await supabaseAdmin
+    .from('drafts')
+    .select('*')
+    .eq('approval_token_hash', tokenHash)
+    .maybeSingle<DraftRow>();
+
+  if (draftErr || !draft) {
+    throw new Error('Invalid or non-existent approval link.');
+  }
+
+  // Reject renewal if draft is already in a terminal state
+  if (draft.status !== 'pending' && draft.status !== 'expired') {
+    throw new Error(
+      `This review draft has already been processed (status: ${draft.status}) and cannot be renewed.`
+    );
+  }
+
+  // Rate Limiting Check: 60s cooldown per draft
+  const COOLDOWN_SECONDS = 60;
+  if (draft.last_renewed_at) {
+    const elapsedMs = Date.now() - new Date(draft.last_renewed_at).getTime();
+    const cooldownMs = COOLDOWN_SECONDS * 1000;
+    if (elapsedMs < cooldownMs) {
+      const remainingSeconds = Math.ceil((cooldownMs - elapsedMs) / 1000);
+      throw new RateLimitError(
+        `Please wait ${remainingSeconds}s before requesting another renewal link.`,
+        remainingSeconds
+      );
+    }
+  }
+
+  // Maximum renewals guard (max 10 renewals per draft to mitigate spamming)
+  const MAX_RENEWALS = 10;
+  if ((draft.renewal_count || 0) >= MAX_RENEWALS) {
+    throw new RateLimitError(
+      'Maximum renewal attempts reached for this review. Please check your dashboard or contact support.'
+    );
+  }
+
+  // Generate fresh 256-bit random token + SHA-256 hash + fresh 72h expiry
+  const { rawToken: newRawToken, tokenHash: newTokenHash, expiresAt: newExpiresAt } =
+    generateApprovalToken(72);
+
+  const nowIso = new Date().toISOString();
+  const nextRenewalCount = (draft.renewal_count || 0) + 1;
+
+  // Invalidate old token hash atomically and update expiry
+  const { data: updatedDraft, error: updErr } = await supabaseAdmin
+    .from('drafts')
+    .update({
+      approval_token_hash: newTokenHash,
+      expires_at: newExpiresAt,
+      token_expires_at: newExpiresAt,
+      status: 'pending',
+      last_renewed_at: nowIso,
+      renewal_count: nextRenewalCount,
+    })
+    .eq('id', draft.id)
+    .eq('approval_token_hash', tokenHash) // atomic condition ensures single renewal winner
+    .select('*')
+    .single<DraftRow>();
+
+  if (updErr || !updatedDraft) {
+    throw new Error('Failed to renew approval link or link was concurrently renewed.');
+  }
+
+  // Fetch associated records for owner notification
+  const [revRes, bizRes] = await Promise.all([
+    supabaseAdmin
+      .from('reviews')
+      .select('*')
+      .eq('id', draft.review_id)
+      .single<ReviewRow>(),
+    supabaseAdmin
+      .from('businesses')
+      .select('*')
+      .eq('id', draft.business_id)
+      .single<BusinessRow>(),
+  ]);
+
+  if (!revRes.data || !bizRes.data) {
+    throw new Error('Associated review or business record not found.');
+  }
+
+  const { data: location } = await supabaseAdmin
+    .from('locations')
+    .select('*')
+    .eq('id', revRes.data.location_id)
+    .single<LocationRow>();
+
+  if (!location) {
+    throw new Error('Associated location record not found.');
+  }
+
+  const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const newApprovalUrl = `${appBaseUrl}/approve/${newRawToken}`;
+
+  // Dispatch strictly to owner registered channel (never returned in HTTP response)
+  await sendOwnerNotification({
+    business: bizRes.data,
+    location,
+    review: revRes.data,
+    draft: updatedDraft,
+    approvalUrl: newApprovalUrl,
+    isRenewal: true,
+  });
+
+  return {
+    ok: true,
+    channel: bizRes.data.notification_channel,
+    targetMasked: maskNotificationTarget(
+      bizRes.data.notification_target,
+      bizRes.data.notification_channel
+    ),
+    expiresAt: newExpiresAt,
+    renewalCount: nextRenewalCount,
+  };
 }

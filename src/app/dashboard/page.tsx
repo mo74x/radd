@@ -4,8 +4,6 @@ import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import PollNowButton from './PollNowButton';
 
-export const dynamic = 'force-dynamic';
-
 export default async function DashboardPage() {
   const { data: business } = await supabaseAdmin
     .from('businesses')
