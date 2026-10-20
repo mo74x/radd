@@ -1,3 +1,4 @@
+import 'server-only';
 import { encryptSecret } from '@/lib/crypto/tokens';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { googleGBP, NormalizedLocation } from '@/lib/google/client';

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // src/lib/google/client.ts
+import 'server-only';
 import { decryptSecret } from '@/lib/crypto/tokens';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import 'server-only';
 import { generateApprovalToken, hashApprovalToken } from '@/lib/crypto/tokens';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { googleGBP } from '@/lib/google/client';

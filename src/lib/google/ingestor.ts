@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import 'server-only';
 import crypto from 'node:crypto';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { googleGBP, GoogleAuthRevokedError } from '@/lib/google/client';
