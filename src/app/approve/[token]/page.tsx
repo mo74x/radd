@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/purity */
 import { getApprovalContextByToken } from '@/lib/approvals/service';
 import ApprovalActions from './ApprovalActions';
 
@@ -55,7 +56,79 @@ export default async function ApproveDraftPage({
           </p>
         </div>
 
-        {isAlreadyDecided ? (
+        {draft.status === 'posting' ? (
+          <div className="rounded-xl border border-sky-200 bg-sky-50 p-5 text-center">
+            <div className="flex items-center justify-center gap-2 text-base font-bold text-sky-900">
+              <span className="inline-block h-2.5 w-2.5 animate-ping rounded-full bg-sky-500" />
+              <span>جاري النشر على جوجل... (Posting to Google...)</span>
+            </div>
+            <p className="mt-2 text-xs text-sky-700">
+              Started at{' '}
+              {new Date(
+                draft.posting_started_at || draft.decided_at || Date.now()
+              ).toLocaleTimeString()}{' '}
+              (Attempt {draft.attempts || 1})
+            </p>
+            {draft.final_body && (
+              <p
+                dir="auto"
+                className="mt-3 rounded-lg bg-white p-3 text-sm text-gray-800 shadow-sm"
+              >
+                {draft.final_body}
+              </p>
+            )}
+          </div>
+        ) : draft.status === 'failed' ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-center">
+            <div className="text-base font-bold text-red-900">
+              {(draft.attempts || 0) < 5
+                ? '⚠️ فشل النشر مؤقتاً — مجدول لإعادة المحاولة (Posting failed, retrying)'
+                : '❌ تعذر نشر الرد على جوجل (Failed to post reply — needs attention)'}
+            </div>
+            {draft.last_error && (
+              <p className="mt-2 rounded bg-white/80 p-2.5 text-xs font-mono text-red-800">
+                {draft.last_error}
+              </p>
+            )}
+            {draft.next_retry_at && (draft.attempts || 0) < 5 && (
+              <p className="mt-2 text-xs font-medium text-red-700">
+                Next retry: {new Date(draft.next_retry_at).toLocaleTimeString()}{' '}
+                (Attempt {draft.attempts || 1}/5)
+              </p>
+            )}
+            {draft.final_body && (
+              <div className="mt-3 text-left">
+                <span className="text-xs font-semibold uppercase text-gray-500">
+                  Approved reply:
+                </span>
+                <p
+                  dir="auto"
+                  className="mt-1 rounded-lg bg-white p-3 text-sm text-gray-800 shadow-sm"
+                >
+                  {draft.final_body}
+                </p>
+              </div>
+            )}
+          </div>
+        ) : draft.status === 'posted' ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center">
+            <p className="font-bold text-emerald-900">
+              ✅ تم نشر الرد على جوجل بنجاح (Reply posted to Google)
+            </p>
+            {draft.final_body && (
+              <p
+                dir="auto"
+                className="mt-3 rounded-lg bg-white p-3 text-sm text-gray-800 shadow-sm"
+              >
+                {draft.final_body}
+              </p>
+            )}
+          </div>
+        ) : draft.status === 'skipped' ? (
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-center text-gray-700">
+            ⏭️ تم تخطي هذا التقييم (Review skipped)
+          </div>
+        ) : isAlreadyDecided ? (
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
             <p className="font-semibold text-blue-900">
               This review has already been handled (Status: {draft.status}).

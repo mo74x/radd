@@ -184,12 +184,24 @@ export default async function DashboardPage() {
                       className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${
                         draft.status === 'posted'
                           ? 'bg-emerald-100 text-emerald-800'
+                          : draft.status === 'posting'
+                          ? 'bg-sky-100 text-sky-800 animate-pulse'
                           : draft.status === 'pending'
                           ? 'bg-amber-100 text-amber-800'
+                          : draft.status === 'failed'
+                          ? 'bg-red-100 text-red-800'
+                          : draft.status === 'expired'
+                          ? 'bg-orange-100 text-orange-800'
                           : 'bg-gray-100 text-gray-700'
                       }`}
                     >
-                      {draft.status}
+                      {draft.status === 'posting'
+                        ? 'Posting...'
+                        : draft.status === 'failed'
+                        ? (draft.attempts || 0) < 5
+                          ? `Failed (Retrying ${draft.attempts || 1}/5)`
+                          : 'Failed (Needs Attention)'
+                        : draft.status}
                     </span>
                   )}
                 </div>
@@ -203,10 +215,18 @@ export default async function DashboardPage() {
                 </p>
 
                 {draft && (
-                  <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/50 p-3.5">
-                    <div className="mb-1 flex items-center justify-between text-xs text-emerald-800">
+                  <div
+                    className={`mt-4 rounded-xl border p-3.5 ${
+                      draft.status === 'failed'
+                        ? 'border-red-200 bg-red-50/40'
+                        : draft.status === 'posting'
+                        ? 'border-sky-200 bg-sky-50/40'
+                        : 'border-emerald-100 bg-emerald-50/50'
+                    }`}
+                  >
+                    <div className="mb-1 flex items-center justify-between text-xs text-gray-600">
                       <span className="font-semibold">
-                        {draft.final_body ? 'Final Posted Reply:' : 'AI Drafted Reply:'}
+                        {draft.final_body ? 'Final Reply:' : 'AI Drafted Reply:'}
                       </span>
                       <span>
                         {draft.model} ({draft.prompt_version})
@@ -215,6 +235,36 @@ export default async function DashboardPage() {
                     <p dir="auto" className="text-sm text-gray-900">
                       {draft.final_body || draft.body}
                     </p>
+
+                    {draft.status === 'failed' && (
+                      <div className="mt-2.5 rounded-lg bg-red-100/90 p-2.5 text-xs text-red-900">
+                        <div className="font-semibold">
+                          {(draft.attempts || 0) < 5
+                            ? '⚠️ Posting failed — automatic retry scheduled'
+                            : '❌ Posting failed permanently — needs attention'}
+                        </div>
+                        {draft.last_error && (
+                          <div className="mt-1 font-mono text-[11px] text-red-800">
+                            Error: {draft.last_error}
+                          </div>
+                        )}
+                        {draft.next_retry_at && (draft.attempts || 0) < 5 && (
+                          <div className="mt-1 text-red-700">
+                            Next retry: {new Date(draft.next_retry_at).toLocaleTimeString()}{' '}
+                            (Attempt {draft.attempts || 1}/5)
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {draft.status === 'posting' && (
+                      <div className="mt-2.5 flex items-center gap-2 rounded-lg bg-sky-100/90 p-2 text-xs text-sky-900">
+                        <span className="inline-block h-2 w-2 animate-ping rounded-full bg-sky-600" />
+                        <span>
+                          Publishing in progress (attempt {draft.attempts || 1})...
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

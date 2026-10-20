@@ -56,12 +56,40 @@ export default function ApprovalActions({
   }
 
   if (resultState) {
+    const isPosted = resultState.status === 'posted';
+    const isPosting = resultState.status === 'posting';
+    const isSkipped = resultState.status === 'skipped';
+
     return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center">
-        <div className="text-lg font-bold text-emerald-900">
-          {resultState.status === 'posted'
+      <div
+        className={`rounded-xl border p-5 text-center ${
+          isPosted
+            ? 'border-emerald-200 bg-emerald-50'
+            : isPosting
+            ? 'border-sky-200 bg-sky-50'
+            : isSkipped
+            ? 'border-gray-200 bg-gray-50'
+            : 'border-amber-200 bg-amber-50'
+        }`}
+      >
+        <div
+          className={`text-lg font-bold ${
+            isPosted
+              ? 'text-emerald-900'
+              : isPosting
+              ? 'text-sky-900'
+              : isSkipped
+              ? 'text-gray-900'
+              : 'text-amber-900'
+          }`}
+        >
+          {isPosted
             ? '✅ تم نشر الرد على جوجل بنجاح! (Reply Posted to Google)'
-            : '⏭️ تم تخطي هذا التقييم (Review Skipped)'}
+            : isPosting
+            ? '⏳ جاري إرسال الرد إلى جوجل... (Posting in Progress)'
+            : isSkipped
+            ? '⏭️ تم تخطي هذا التقييم (Review Skipped)'
+            : `الحالة: ${resultState.status}`}
         </div>
         {resultState.finalBody && (
           <p

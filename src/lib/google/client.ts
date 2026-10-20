@@ -36,8 +36,21 @@ export class GoogleAuthRevokedError extends Error {
 }
 
 export class GoogleGBPClient {
+  private mockFailCounts: Map<string, number> = new Map();
+
   private get isMock(): boolean {
     return process.env.GOOGLE_API_MODE !== 'live';
+  }
+
+  /**
+   * For testing: configure mock client to fail N times for a given review ID.
+   */
+  setMockFailCount(googleReviewId: string, count: number): void {
+    this.mockFailCounts.set(googleReviewId, count);
+  }
+
+  getMockFailCount(googleReviewId: string): number {
+    return this.mockFailCounts.get(googleReviewId) ?? 0;
   }
 
   /**
@@ -217,6 +230,13 @@ export class GoogleGBPClient {
     replyText: string
   ): Promise<void> {
     if (this.isMock) {
+      const remainingFails = this.mockFailCounts.get(googleReviewId) ?? 0;
+      if (remainingFails > 0) {
+        this.mockFailCounts.set(googleReviewId, remainingFails - 1);
+        throw new Error(
+          `[MOCK GBP] Simulated temporary network/service failure (${remainingFails} remaining)`
+        );
+      }
       console.log(`[MOCK GBP] Published reply to review ${googleReviewId}:\n"${replyText}"`);
       return;
     }

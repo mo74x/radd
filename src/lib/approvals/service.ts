@@ -135,14 +135,16 @@ export async function executeApprovalDecision(params: {
     throw new Error('Reply text cannot be empty.');
   }
 
-  // 3. Atomically claim the pending draft before calling external Google API
-  const intermediateStatus = action === 'edit' ? 'edited' : 'approved';
+  // 3. Atomically claim the pending draft with 'posting' status before calling Google API
+  const nextAttempt = (ctx.draft.attempts || 0) + 1;
   const { data: claimed, error: claimErr } = await supabaseAdmin
     .from('drafts')
     .update({
-      status: intermediateStatus,
+      status: 'posting',
       final_body: finalReply,
       decided_at: now,
+      posting_started_at: now,
+      attempts: nextAttempt,
     })
     .eq('id', ctx.draft.id)
     .eq('status', 'pending')
@@ -169,7 +171,9 @@ export async function executeApprovalDecision(params: {
       .update({
         status: 'posted',
         posted_at: postedAt,
+        google_reply_posted_at: postedAt,
         last_error: null,
+        next_retry_at: null,
       })
       .eq('id', ctx.draft.id);
 
@@ -179,14 +183,183 @@ export async function executeApprovalDecision(params: {
       postedAt,
     };
   } catch (err: any) {
+    const nextRetryAt = computeNextRetryAt(nextAttempt);
     await supabaseAdmin
       .from('drafts')
       .update({
         status: 'failed',
         last_error: err.message,
+        next_retry_at: nextRetryAt,
       })
       .eq('id', ctx.draft.id);
 
     throw new Error(`Failed posting reply to Google: ${err.message}`);
   }
+}
+
+/**
+ * Computes next retry timestamp using exponential backoff with randomized jitter.
+ */
+export function computeNextRetryAt(attemptNumber: number): string {
+  const baseSeconds = Math.min(3600, 30 * Math.pow(2, Math.max(0, attemptNumber - 1)));
+  const jitterSeconds = Math.floor(Math.random() * 15);
+  const totalMs = (baseSeconds + jitterSeconds) * 1000;
+  return new Date(Date.now() + totalMs).toISOString();
+}
+
+export interface RetryWorkerSummary {
+  checked: number;
+  recoveredStuck: number;
+  retriedFailed: number;
+  succeeded: number;
+  failedAgain: number;
+  exhausted: number;
+}
+
+/**
+ * Recovers crashed/stuck 'posting' drafts (> 5 min) and retries 'failed' drafts whose backoff has expired.
+ */
+export async function processFailedAndStuckDrafts(
+  maxRetries = 5
+): Promise<RetryWorkerSummary> {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const stuckThresholdIso = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+
+  const summary: RetryWorkerSummary = {
+    checked: 0,
+    recoveredStuck: 0,
+    retriedFailed: 0,
+    succeeded: 0,
+    failedAgain: 0,
+    exhausted: 0,
+  };
+
+  // 1. Fetch failed drafts eligible for retry + drafts stuck in posting
+  const [failedRes, stuckRes] = await Promise.all([
+    supabaseAdmin
+      .from('drafts')
+      .select('*')
+      .eq('status', 'failed')
+      .lt('attempts', maxRetries)
+      .or(`next_retry_at.lte.${nowIso},next_retry_at.is.null`),
+    supabaseAdmin
+      .from('drafts')
+      .select('*')
+      .eq('status', 'posting')
+      .lt('posting_started_at', stuckThresholdIso),
+  ]);
+
+  const eligibleDrafts: DraftRow[] = [
+    ...(failedRes.data || []),
+    ...(stuckRes.data || []),
+  ];
+
+  summary.checked = eligibleDrafts.length;
+
+  for (const draft of eligibleDrafts) {
+    const isStuck = draft.status === 'posting';
+    if (isStuck) summary.recoveredStuck++;
+    else summary.retriedFailed++;
+
+    // Atomic claim for retry
+    const claimTime = new Date().toISOString();
+    const nextAttempt = (draft.attempts || 0) + 1;
+
+    const { data: claimed, error: claimErr } = await supabaseAdmin
+      .from('drafts')
+      .update({
+        status: 'posting',
+        attempts: nextAttempt,
+        posting_started_at: claimTime,
+      })
+      .eq('id', draft.id)
+      .eq('status', draft.status)
+      .select('*')
+      .maybeSingle<DraftRow>();
+
+    if (claimErr || !claimed) {
+      continue;
+    }
+
+    // Fetch review & location details needed to post reply
+    const { data: review } = await supabaseAdmin
+      .from('reviews')
+      .select('*')
+      .eq('id', draft.review_id)
+      .single<ReviewRow>();
+
+    if (!review) {
+      await supabaseAdmin
+        .from('drafts')
+        .update({
+          status: 'failed',
+          last_error: 'Associated review not found',
+        })
+        .eq('id', draft.id);
+      summary.failedAgain++;
+      continue;
+    }
+
+    const { data: location } = await supabaseAdmin
+      .from('locations')
+      .select('*')
+      .eq('id', review.location_id)
+      .single<LocationRow>();
+
+    if (!location) {
+      await supabaseAdmin
+        .from('drafts')
+        .update({
+          status: 'failed',
+          last_error: 'Associated location not found',
+        })
+        .eq('id', draft.id);
+      summary.failedAgain++;
+      continue;
+    }
+
+    const replyText = draft.final_body || draft.body;
+
+    try {
+      await googleGBP.postReply(
+        draft.business_id,
+        location.google_account_id,
+        location.google_location_id,
+        review.google_review_id,
+        replyText
+      );
+
+      const postedAt = new Date().toISOString();
+      await supabaseAdmin
+        .from('drafts')
+        .update({
+          status: 'posted',
+          posted_at: postedAt,
+          google_reply_posted_at: postedAt,
+          last_error: null,
+          next_retry_at: null,
+        })
+        .eq('id', draft.id);
+
+      summary.succeeded++;
+    } catch (err: any) {
+      const isExhausted = nextAttempt >= maxRetries;
+      const nextRetry = isExhausted ? null : computeNextRetryAt(nextAttempt);
+
+      await supabaseAdmin
+        .from('drafts')
+        .update({
+          status: 'failed',
+          last_error: err.message,
+          next_retry_at: nextRetry,
+        })
+        .eq('id', draft.id);
+
+      if (isExhausted) summary.exhausted++;
+      else summary.failedAgain++;
+    }
+  }
+
+  return summary;
 }

@@ -4,7 +4,15 @@ export type NotificationChannel = 'email' | 'telegram' | 'whatsapp';
 export type ArabicDialect = 'egyptian' | 'msa' | 'gulf' | 'levantine';
 export type ReviewLanguage = 'ar' | 'en' | 'mixed' | 'none';
 export type ReviewFlag = 'refund' | 'legal' | 'medical' | 'threat' | 'abuse' | 'injection_suspected';
-export type DraftStatus = 'pending' | 'approved' | 'edited' | 'skipped' | 'posted' | 'failed';
+export type DraftStatus =
+  | 'pending'
+  | 'posting'
+  | 'approved'
+  | 'edited'
+  | 'skipped'
+  | 'posted'
+  | 'failed'
+  | 'expired';
 
 export interface BusinessRow {
   id: string;
@@ -73,6 +81,10 @@ export interface DraftRow {
   decided_at: string | null;
   posted_at: string | null;
   last_error: string | null;
+  attempts: number;
+  posting_started_at: string | null;
+  next_retry_at: string | null;
+  google_reply_posted_at: string | null;
   model: string;
   prompt_version: string;
   created_at: string;

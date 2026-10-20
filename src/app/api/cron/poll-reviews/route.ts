@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { pollAllActiveLocations } from '@/lib/google/ingestor';
+import { processFailedAndStuckDrafts } from '@/lib/approvals';
 
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
@@ -9,8 +10,15 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const summary = await pollAllActiveLocations(25);
-    return NextResponse.json(summary);
+    const [pollSummary, retrySummary] = await Promise.all([
+      pollAllActiveLocations(25),
+      processFailedAndStuckDrafts(5),
+    ]);
+
+    return NextResponse.json({
+      polling: pollSummary,
+      retries: retrySummary,
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
