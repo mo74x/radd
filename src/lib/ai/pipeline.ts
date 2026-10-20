@@ -21,6 +21,7 @@ export interface DraftPipelineOutput {
     flags: string[];
     requiresCarefulReview: boolean;
   };
+  isDuplicate?: boolean;
 }
 
 export async function processReviewAndCreateDraft(
@@ -37,13 +38,28 @@ export async function processReviewAndCreateDraft(
     throw new Error(`Review ${reviewId} not found: ${revErr?.message}`);
   }
 
-  // Check if a pending or posted draft already exists for this review
+  // Check if an active draft already exists for this review
   const { data: existingDraft } = await supabaseAdmin
     .from('drafts')
     .select('*')
     .eq('review_id', review.id)
-    .in('status', ['pending', 'approved', 'edited', 'posted'])
+    .in('status', ['pending', 'posting', 'approved', 'edited', 'posted'])
     .maybeSingle<DraftRow>();
+
+  if (existingDraft && existingDraft.status !== 'pending') {
+    return {
+      reviewId: review.id,
+      draft: existingDraft,
+      rawApprovalToken: '',
+      approvalUrl: '',
+      classification: {
+        language: review.language ?? 'none',
+        flags: review.flags,
+        requiresCarefulReview: review.requires_careful_review,
+      },
+      isDuplicate: true,
+    };
+  }
 
   // 2. Fetch business, location, and brand profile in parallel
   const [bizRes, locRes, brandRes] = await Promise.all([
@@ -173,6 +189,31 @@ export async function processReviewAndCreateDraft(
     .single<DraftRow>();
 
   if (draftErr || !insertedDraft) {
+    // Conflict-tolerant logic: if another poller/thread created a draft concurrently
+    if (
+      draftErr?.code === '23505' ||
+      draftErr?.message?.includes('duplicate key') ||
+      draftErr?.message?.includes('idx_drafts_active_review')
+    ) {
+      const { data: activeDraft } = await supabaseAdmin
+        .from('drafts')
+        .select('*')
+        .eq('review_id', review.id)
+        .in('status', ['pending', 'posting', 'posted'])
+        .maybeSingle<DraftRow>();
+
+      if (activeDraft) {
+        return {
+          reviewId: review.id,
+          draft: activeDraft,
+          rawApprovalToken: '',
+          approvalUrl: '',
+          classification,
+          isDuplicate: true,
+        };
+      }
+    }
+
     throw new Error(`Failed inserting draft: ${draftErr?.message}`);
   }
 

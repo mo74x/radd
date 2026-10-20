@@ -37,9 +37,14 @@ export class GoogleAuthRevokedError extends Error {
 
 export class GoogleGBPClient {
   private mockFailCounts: Map<string, number> = new Map();
+  private customMockReviews: NormalizedReview[] | null = null;
 
   private get isMock(): boolean {
     return process.env.GOOGLE_API_MODE !== 'live';
+  }
+
+  setCustomMockReviews(reviews: NormalizedReview[] | null): void {
+    this.customMockReviews = reviews;
   }
 
   /**
@@ -189,7 +194,7 @@ export class GoogleGBPClient {
     googleLocationId: string
   ): Promise<NormalizedReview[]> {
     if (this.isMock) {
-      return this.getMockReviews();
+      return this.customMockReviews ?? this.getMockReviews();
     }
 
     const accessToken = await this.getValidAccessToken(businessId);

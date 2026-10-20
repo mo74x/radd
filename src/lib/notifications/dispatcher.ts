@@ -32,10 +32,21 @@ function hasLiveTelegramToken(): boolean {
   return Boolean(token && token.includes(':') && !token.includes('ABCdef'));
 }
 
+let dispatchedNotificationCount = 0;
+
+export function getDispatchedNotificationCount(): number {
+  return dispatchedNotificationCount;
+}
+
+export function resetDispatchedNotificationCount(): void {
+  dispatchedNotificationCount = 0;
+}
+
 export async function sendOwnerNotification(
   payload: NotificationPayload
 ): Promise<NotificationResult> {
   const { business } = payload;
+  dispatchedNotificationCount++;
 
   if (business.notification_channel === 'telegram') {
     return sendTelegramNotification(payload);

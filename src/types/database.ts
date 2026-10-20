@@ -38,6 +38,8 @@ export interface LocationRow {
   is_polling_enabled: boolean;
   last_polled_at: string | null;
   last_review_update_time: string | null;
+  poll_lock_until: string | null;
+  poll_lock_token: string | null;
   created_at: string;
 }
 
