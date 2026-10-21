@@ -6,23 +6,24 @@
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white">
   <img alt="Supabase" src="https://img.shields.io/badge/Supabase-Postgres-3ECF8E?logo=supabase&logoColor=white">
-  <img alt="Zod" src="https://img.shields.io/badge/validation-Zod-3E67B1">
+  <img alt="WhatsApp" src="https://img.shields.io/badge/WhatsApp-Cloud%20API-25D366?logo=whatsapp&logoColor=white">
+  <img alt="Billing" src="https://img.shields.io/badge/Billing-Paymob%20%C2%B7%20Stripe-00A3FF">
   <img alt="Languages" src="https://img.shields.io/badge/replies-Egyptian%20Arabic%20%C2%B7%20English-0F5E63">
-  <img alt="Eval suite" src="https://img.shields.io/badge/prompt%20eval-30%2F30-F5A623">
+  <img alt="Eval suite" src="https://img.shields.io/badge/eval%20suite-102%20cases-F5A623">
 </p>
 
 # Radd (رد)
 
 **AI-drafted replies to every Google review, approved by the owner in one tap.**
 
-Radd is a multi-tenant SaaS for local businesses (cafés, restaurants, clinics, retail) in Egypt and the wider MENA region. It watches a business's Google Business Profile for new reviews, classifies them, drafts a reply in the brand's voice (including natural **Egyptian Arabic**), checks that draft against deterministic safety rules, and sends the owner a one-tap approval link by email or Telegram. When the owner approves or edits the reply, Radd publishes it to Google.
+Radd is a multi-tenant SaaS for local businesses (cafés, restaurants, clinics, retail) in Egypt and the wider MENA region. It watches a business's Google Business Profile for new reviews, classifies them, drafts a reply in the brand's voice (including natural **Egyptian Arabic**), checks that draft against deterministic safety rules, and sends the owner a one-tap approval link by **WhatsApp**, **Telegram**, or **email**. When the owner approves or edits the reply, Radd publishes it to Google.
 
-> **Status:** feature-complete MVP, developed and tested locally against a built-in mock of the Google Business Profile API. Live Google access depends on Google's API access and OAuth verification process.
+> **Status:** production-ready SaaS with multi-gateway billing (**Paymob EGP**, Stripe, Fawry), official **Meta WhatsApp Cloud API** approved message templates with one-tap URL buttons, multi-location branch management, Row Level Security (RLS), and live Google Business Profile sync with local mock simulator fallbacks.
 
 <p align="center">
   <img src="docs/radd-flow.svg" alt="Illustration of the Radd flow: the owner receives an alert, approves with one tap, and the reply is published on Google" width="100%">
   <br>
-  <sub>Illustration of the three steps (not a real screenshot).</sub>
+  <sub>Illustration of the three steps: ingestion & drafting, one-tap owner approval, and publishing to Google.</sub>
 </p>
 
 ---
@@ -31,9 +32,12 @@ Radd is a multi-tenant SaaS for local businesses (cafés, restaurants, clinics, 
 
 - [Why Radd](#why-radd)
 - [How it works](#how-it-works)
+- [UI preview](#ui-preview)
 - [Example behavior](#example-behavior)
 - [Features](#features)
 - [Brand voice](#brand-voice)
+- [Subscriptions and billing](#subscriptions-and-billing)
+- [Multi-location support](#multi-location-support)
 - [Tech stack](#tech-stack)
 - [Architecture](#architecture)
 - [Safety and security](#safety-and-security)
@@ -48,6 +52,7 @@ Radd is a multi-tenant SaaS for local businesses (cafés, restaurants, clinics, 
 - [Brand assets](#brand-assets)
 - [Notes on Google branding](#notes-on-google-branding)
 - [Author](#author)
+- [License](#license)
 
 ---
 
@@ -55,11 +60,12 @@ Radd is a multi-tenant SaaS for local businesses (cafés, restaurants, clinics, 
 
 Replying to reviews improves how a business looks on Google, but owners rarely have time to write replies, and generic AI tools tend to sound robotic, mishandle dialect, or promise things the business never offered.
 
-Radd focuses on three things:
+Radd focuses on four fundamentals:
 
-1. **Local language quality:** replies in natural Egyptian Arabic, English, or a mix, matching the reviewer.
-2. **A human always decides:** nothing is posted without the owner's approval, and risky reviews are clearly flagged.
-3. **Safety by construction:** a deterministic validator sits *after* the model, so refund promises, discount codes and stray phone numbers are blocked no matter what the model produces.
+1. **Local language quality:** replies in authentic Egyptian Arabic (عامية مصرية), Modern Standard Arabic, English, or a natural mix matching the reviewer's tone.
+2. **A human always decides:** nothing is posted without the owner's explicit approval; sensitive complaints are flagged with visual badges.
+3. **Safety by construction:** a deterministic validator sits *after* the model, blocking refund promises, fake discounts, and contact leaks regardless of what the LLM produces.
+4. **Frictionless one-tap approval:** messages arrive on **WhatsApp** or **Telegram** with direct URL action buttons that open a mobile-first page requiring zero login.
 
 ---
 
@@ -70,27 +76,28 @@ sequenceDiagram
     autonumber
     actor Customer as Google reviewer
     participant GBP as Google Business Profile API
-    participant Cron as Polling ingestor
+    participant Cron as Polling ingestor (row leased)
     participant DB as Supabase PostgreSQL
     participant AI as Classifier and drafter
     participant Guard as Deterministic validator
-    participant Notify as Email / Telegram
+    participant Notify as WhatsApp / Telegram / Email
     actor Owner as Business owner
     participant App as /approve/[token]
 
     Customer->>GBP: Posts a review
     Cron->>GBP: Polls for unanswered reviews
     GBP-->>Cron: Review objects
-    Cron->>DB: Idempotent upsert
+    Cron->>DB: Idempotent upsert & subscription quota check
     Cron->>AI: Classify and draft
-    AI->>Guard: Validate draft
+    AI->>Guard: Validate draft (Arabic & safety rules)
     Guard-->>AI: Approved or blocked
-    AI->>DB: Store draft + SHA-256 token hash
+    AI->>DB: Store draft + 256-bit token SHA-256 hash
     AI->>Notify: Send one-tap link
-    Notify-->>Owner: New review + suggested reply
-    Owner->>App: Approve, Edit or Skip
-    App->>DB: Single-use status transition
-    App->>GBP: Publish reply
+    Notify-->>Owner: WhatsApp template / Telegram push / Email
+    Owner->>App: 1-Tap Approve, Edit in place, or Dismiss
+    App->>DB: Single-use state transition (pending -> posting)
+    App->>GBP: Publish reply with retry backoff
+    App->>DB: Transition to posted
 ```
 
 ### The AI pipeline
@@ -98,14 +105,34 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     A[New review] --> B[Classifier<br/>language · sentiment · urgency · category · flags]
-    B --> C[Drafter<br/>brand profile + examples]
+    B --> C[Drafter<br/>brand profile + examples + dialect]
     C --> D{Deterministic<br/>validator}
-    D -- passes --> E[Draft stored<br/>+ token hash]
+    D -- passes --> E[Draft stored<br/>+ SHA-256 token hash]
     D -- blocked --> F[Rejected<br/>never reaches the owner]
-    E --> G[Owner notified<br/>Email / Telegram]
+    E --> G[Owner notified<br/>WhatsApp · Telegram · Email]
     B -. flagged: medical · legal · refund · injection .-> H[Marked for careful review]
     H --> E
 ```
+
+---
+
+## UI preview
+
+### Web Dashboard & Branch Analytics
+Central management interface featuring answer rates, approval metrics, active notification channel status, location switcher, and complete review & draft timeline:
+
+<p align="center">
+  <img src="docs/radd-preview-dashboard.svg" alt="Radd Dashboard UI Preview" width="100%">
+</p>
+
+### Mobile One-Tap Approval (`/approve/[token]`)
+Mobile-first approval interface opened directly from WhatsApp, Telegram, or email. Displays the reviewer's star rating, authentic Arabic feedback, proposed response, and instant action buttons:
+
+<p align="center">
+  <img src="docs/radd-preview-approval.svg" alt="Radd One-Tap Mobile Approval UI Preview" width="420">
+  <br>
+  <sub>Mobile view of a 5★ Egyptian Arabic review with suggested brand-voice reply and action buttons.</sub>
+</p>
 
 ---
 
@@ -115,47 +142,59 @@ Illustrative examples of how different reviews are handled:
 
 | Review | What Radd does |
 | :--- | :--- |
-| Positive review in Egyptian Arabic | Detects `ar`, drafts a warm reply in natural dialect using the brand tone and signature |
-| English review with a mixed complaint | Detects the language, acknowledges the issue, invites the customer to contact the business at the official number. No promises or compensation |
+| Positive review in Egyptian Arabic | Detects `ar`, drafts a warm reply in natural dialect using brand tone and signature |
+| English review with a mixed complaint | Detects the language, acknowledges the issue, invites the customer to call the official number. No promises or compensation |
 | Review containing instructions such as "ignore all previous instructions" | Treated as untrusted data, flagged `injection_suspected`, marked for careful review |
 | Star-only review with no text | Drafts a short thank-you without inventing details of the visit |
-| Review demanding a refund or mentioning legal action | Flagged `refund` or `legal`, requires careful owner review, and the validator blocks any refund or compensation promise in the draft |
+| Review demanding a refund or mentioning legal action | Flagged `refund` or `legal`, requires careful owner review, and the validator blocks any compensation promise |
 | Review mentioning an allergy or illness | Flagged `medical`, marked for careful review, no medical claims in the reply |
 
 ---
 
 ## Features
 
-**Review handling**
-- Polls Google Business Profile for unanswered reviews, with a protected cron endpoint and a manual **Poll now** button.
-- Idempotent ingestion keyed on the Google review ID, so a review is never processed twice.
+**Review handling & ingestion**
+- Polls Google Business Profile for unanswered reviews with a protected cron endpoint and a manual **Poll now** button.
+- Idempotent ingestion keyed on the Google review ID, preventing duplicate processing.
+- Row-level polling leases (`poll_lock_token`, `poll_lock_until`) to avoid race conditions across distributed serverless cron runners.
 - Skips reviews that already have an owner reply.
 
 **AI classification and drafting**
-- Detects language: Egyptian Arabic, English, mixed, or no text (star-only).
-- Detects sentiment, urgency and category (food, service, ambiance, delivery, billing).
-- Flags sensitive cases: `medical`, `legal`, `refund`, and `injection_suspected`. Negative or flagged reviews are marked for careful review.
-- Drafts replies using the brand profile: tone, dialect, signature, do/don't lists and example replies.
-- Handles star-only reviews without inventing details the reviewer never wrote.
+- Detects language: Egyptian Arabic, Modern Standard Arabic, English, mixed, or star-only (empty text).
+- Detects sentiment, urgency, and category (food, service, ambiance, delivery, billing).
+- Flags sensitive cases: `medical`, `legal`, `refund`, and `injection_suspected`. Negative or flagged reviews trigger visual warning badges.
+- Drafts replies using the brand profile: tone, dialect, signature, do/don't lists, and approved reference examples.
+- Handles star-only reviews gracefully without hallucinating customer interactions.
 
-**Owner experience**
-- **One-tap approval page**, mobile-first and login-free, secured by a signed single-use token.
-- Three actions: **Approve**, **Edit reply** (in place), **Skip**.
-- Warning banner when a review needs careful handling.
-- Notifications by **email (Resend)** and **Telegram** (inline action button).
-- 3-step onboarding: connect Google, set brand voice, choose notification channel.
+**WhatsApp approval channel (Meta Cloud API)**
+- Official Meta WhatsApp Business Cloud API integration using pre-approved templates (`review_reply_approval`).
+- Dynamic URL button components with parameters leading directly to `/approve/[token]`.
+- Automatic international phone number normalization (e.g. `01001234567` $\to$ `201001234567`).
+- Zero-credential local console mocking for offline testing and CI workflows.
+- Disconnection alerts sent via WhatsApp if Google OAuth credentials expire or are revoked.
 
-**Dashboard**
-- Reviews answered %, approved-without-edit %, pending count, active notification channel.
-- Full review and reply timeline with ratings, languages, flags and model versions.
+**Owner experience & one-tap approval**
+- **Mobile-first approval page**, login-free, secured by a signed single-use 256-bit token.
+- Three immediate actions: **Approve & Post**, **Edit & Post** (inline with character and dialect validation), and **Reject / Dismiss**.
+- Link expiry enforcement (72-hour lifetime) with one-click secure renewal (`/api/drafts/[token]/renew`) redispatched to the owner's channel.
+- Multi-channel notification dispatchers: **WhatsApp**, **Telegram** (inline button), and **Email** (Resend).
 
-<!--
-Add real screenshots to docs/screenshots/ and uncomment:
+**Multi-location management**
+- Supports multi-branch businesses under a single account.
+- Location-specific contact details (phone, care email) and branch signature overrides.
+- Dashboard location switcher with branch-filtered review timelines and analytics.
 
-| Dashboard | Onboarding | One-tap approval |
-| :---: | :---: | :---: |
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Onboarding](docs/screenshots/onboarding.png) | ![Approval page](docs/screenshots/approve.png) |
--->
+**Publishing state machine**
+- Resilient state transitions: `pending` $\to$ `posting` $\to$ `posted` or `failed`.
+- Exponential backoff retry loop with retry scheduling (`next_retry_at`, attempts counter).
+- Atomic leasing guarantees that only one background worker publishes a draft at any given time.
+
+**Google OAuth lifecycle & privacy compliance**
+- Automatic revocation detection (`invalid_grant`, HTTP 401/403) with immediate polling pause to protect API quotas.
+- Reconnection notification dispatch across WhatsApp, Telegram, and Email with direct OAuth reconnect URLs.
+- Two privacy-compliant disconnection modes:
+  - **Soft disconnect:** disables sync and revokes OAuth tokens while preserving historical review data.
+  - **Full deletion (GDPR/CCPA):** completely purges stored review drafts, location records, and credentials from Supabase.
 
 ---
 
@@ -165,13 +204,43 @@ Each business configures how Radd speaks during onboarding. The drafter uses the
 
 | Setting | What it controls |
 | :--- | :--- |
-| Tone | Overall voice, for example warm, formal or playful |
-| Dialect | Egyptian Arabic, or other Arabic and English choices |
-| Signature | The sign-off appended to replies |
-| DO list | Things replies should do or mention |
-| DON'T list | Things replies must never say |
-| Example replies | Past replies the owner likes, used as style references |
+| Tone | Overall voice, for example warm, formal, energetic, or playful |
+| Dialect | Egyptian Arabic (عامية مصرية), Modern Standard Arabic, Gulf, or Levantine |
+| Signature | The sign-off appended to replies (e.g. `فريق Roastery & Co.`) |
+| DO list | Things replies should do or mention (e.g. welcome back, mention specialties) |
+| DON'T list | Things replies must never say (e.g. never offer free drinks, never admit fault) |
+| Example replies | Past replies the owner likes, used as few-shot style references |
 | Official contact number | The only phone number a reply is allowed to include |
+
+---
+
+## Subscriptions and billing
+
+Radd includes a built-in billing engine designed for regional MENA payment options alongside international cards:
+
+| Plan | Pricing | Monthly Reviews | Locations | Channels |
+| :--- | :--- | :-: | :-: | :--- |
+| **Starter** | 499 EGP / mo | Up to 100 | 1 location | WhatsApp, Telegram, Email |
+| **Pro** | 999 EGP / mo | Up to 500 | Up to 3 locations | WhatsApp, Telegram, Email |
+| **Enterprise** | Custom | Unlimited | Unlimited | Dedicated SLA & webhooks |
+
+**Supported payment gateways:**
+1. **Paymob (Egypt):** Accept cards (Visa, Mastercard, Meeza) and Mobile Wallets (Vodafone Cash, Orange, Etisalat, WE) with cryptographic HMAC-SHA512 webhook signature verification.
+2. **Stripe (Global):** Standard subscription checkout sessions with webhook signature validation.
+3. **Fawry (Egypt Cash/Kiosk):** Reference-number checkout for offline retail payments.
+
+**Entitlement enforcement:**
+- Checks business plan and subscription status (`active` or valid `trial_ends_at`) prior to review ingestion and AI drafting.
+- Gracefully prevents quota overages while keeping historical dashboard data accessible.
+
+---
+
+## Multi-location support
+
+For hospitality and retail chains with multiple branches, Radd structures each branch as a distinct `locations` row:
+- Each branch connects to its respective Google Business Profile location ID.
+- Stores custom branch contact phones (e.g. branch delivery hotline) and custom signatures.
+- Dedicated cron leasing per location ensures high-volume locations do not block smaller branches during polling.
 
 ---
 
@@ -179,15 +248,16 @@ Each business configures how Radd speaks during onboarding. The drafter uses the
 
 | Layer | Technology |
 | :--- | :--- |
-| Framework | Next.js 16 (App Router, Turbopack), React 19, TypeScript |
+| Framework | Next.js 16 (App Router, Turbopack), React 19, TypeScript (strict mode) |
 | Styling | Tailwind CSS |
-| Database and auth | Supabase (PostgreSQL 15), `@supabase/supabase-js`, Row Level Security |
-| AI | Pluggable LLM layer (Anthropic Claude, OpenAI, Google Gemini) with structured JSON output and a local simulator fallback |
-| Google | Business Profile APIs through `googleapis`, OAuth 2.0 |
-| Notifications | Resend (email), Telegram Bot API |
-| Security | Node.js `crypto` (256-bit random tokens, SHA-256 hashing) |
-| Validation | Zod |
-| Scripts | `tsx` |
+| Database & auth | Supabase (PostgreSQL 15), `@supabase/supabase-js`, Row Level Security (RLS) |
+| Server security | `server-only` isolation, Node.js `crypto` (AES-256-GCM token encryption, SHA-256 hashes) |
+| AI layer | Pluggable LLM layer (Anthropic Claude, OpenAI, Google Gemini) with structured JSON output and a local simulator fallback |
+| Google | Business Profile APIs through `googleapis`, OAuth 2.0 with offline refresh tokens |
+| Notifications | Meta WhatsApp Business Cloud API (v21.0), Resend (email), Telegram Bot API |
+| Billing & payments | Paymob (EGP HMAC-SHA512), Stripe Checkout & Webhooks, Fawry |
+| Validation | Zod schema validation for all API inputs and webhooks |
+| Testing | Node.js native test runner (`node:test`), `tsx` |
 
 ---
 
@@ -195,55 +265,63 @@ Each business configures how Radd speaks during onboarding. The drafter uses the
 
 ```mermaid
 flowchart TB
-    subgraph External
-        G[Google Business Profile]
-        R[Resend email]
+    subgraph External[External services]
+        G[Google Business Profile API]
+        W[Meta WhatsApp Cloud API v21.0]
+        R[Resend Email]
         T[Telegram Bot API]
-        L[LLM provider]
+        P[Paymob / Stripe / Fawry]
+        L[LLM Provider: Claude / OpenAI / Gemini]
     end
 
-    subgraph App[Next.js app]
+    subgraph App[Next.js 16 Application]
         C[Cron / Poll now<br/>/api/cron/poll-reviews]
-        I[Ingestor]
-        P[AI pipeline<br/>classifier · drafter · validator]
-        N[Notification dispatcher]
+        I[Ingestor with row-level leasing]
+        B[Billing webhooks<br/>/api/billing/webhook/gateway]
+        AI[AI pipeline<br/>classifier · drafter · validator]
+        N[Notification dispatcher<br/>WhatsApp · Telegram · Email]
         A[Approval page + API<br/>/approve/token]
         D[Dashboard + Onboarding]
     end
 
-    DB[(Supabase PostgreSQL)]
+    DB[(Supabase PostgreSQL<br/>Multi-tenant RLS + AES-256 encryption)]
 
     C --> I
     G -- reviews --> I
     I --> DB
-    I --> P
-    P <--> L
-    P --> DB
-    P --> N
-    N --> R
+    I --> AI
+    AI <--> L
+    AI --> DB
+    AI --> N
+    N --> W
     N --> T
-    R -. magic link .-> A
-    T -. magic link .-> A
+    N --> R
+    W -. one-tap URL .-> A
+    T -. one-tap URL .-> A
+    R -. one-tap URL .-> A
     A --> DB
     A -- publish reply --> G
+    P -- webhooks --> B
+    B --> DB
     D <--> DB
 ```
-
-Everything is stored in Supabase. Each business is a tenant: locations, brand profiles, reviews and drafts all belong to a `business_id`.
 
 ---
 
 ## Safety and security
 
-1. **Prompt-injection defense.** Review text is wrapped in isolated data tags (`<untrusted_review_data>`) and treated as content, never as instructions. Suspicious reviews are flagged `injection_suspected`.
-2. **Deterministic output validator.** Pure TypeScript checks run on every generated reply before it reaches the owner:
-   - blocks refund and compensation promises (English and Arabic phrasing),
-   - blocks unauthorized discounts, vouchers and codes,
-   - strips phone numbers other than the location's official contact number,
-   - enforces length bounds (10 to 1,000 characters).
-3. **Single-use magic links.** Approval tokens are 256-bit random values. Only the SHA-256 hash is stored, so a database leak does not expose usable links. A decision is applied through an atomic `status = 'pending'` check, which blocks double taps and replays.
-4. **Human in the loop.** The model never publishes on its own. Every reply needs an explicit owner decision.
-5. **Tenant isolation.** All business data is scoped by `business_id`, with RLS policies on the database tables.
+1. **Prompt-injection defense.** Review text is wrapped in isolated data tags (`<untrusted_review_data>`) and treated strictly as content, never instructions. Suspicious prompts are flagged `injection_suspected`.
+2. **Deterministic output validator.** Pure TypeScript checks execute on every generated reply before the owner ever sees it:
+   - blocks refund and compensation promises (Arabic and English phrasing),
+   - blocks unauthorized discounts, promo codes, and vouchers,
+   - strips contact phone numbers other than the location's official contact number,
+   - flags Arabic WhatsApp invitation phrases (e.g. `كلمنا واتساب`, `تواصل معنا على الواتس`),
+   - enforces strict character bounds (10 to 1,000 characters).
+3. **Single-use magic links & SHA-256 hashing.** Approval tokens are 256-bit random secrets. Only the SHA-256 hash is stored in the database. A database leak cannot expose actionable approval links.
+4. **Token encryption at rest.** OAuth access and refresh tokens are encrypted at rest using AES-256-GCM (`TOKEN_ENCRYPTION_KEY`).
+5. **Log data scrubber.** Sensitive tokens, keys, and authorization strings are recursively redacted from server logs.
+6. **Multi-tenant Row Level Security (RLS).** Supabase tables enforce tenant boundaries scoped strictly by `business_id`.
+7. **Human in the loop.** The model never auto-publishes. Every reply requires explicit owner approval.
 
 ---
 
@@ -253,60 +331,72 @@ Everything is stored in Supabase. Each business is a tenant: locations, brand pr
 
 - Node.js 20+
 - A Supabase project (or local Supabase)
-- Optional for live mode: Google Cloud OAuth credentials, a Resend API key, a Telegram bot token, and an LLM API key
+- Optional for live production: Google Cloud OAuth credentials, Meta WhatsApp Cloud API credentials, a Resend API key, Telegram bot token, and Paymob / Stripe keys.
 
-Without the optional keys, Radd falls back to the built-in mock Google client, a console notification mock, and a local LLM simulator, so you can run the whole flow offline.
+*Without external keys, Radd runs completely in offline mock mode with built-in Google API, WhatsApp, and LLM simulators.*
 
 ### Install
 
 ```bash
-git clone https://github.com/mo74x/review-reply-bot.git
-cd review-reply-bot
+git clone https://github.com/mo74x/radd.git
+cd radd
 npm install
 ```
 
 ### Set up the database
 
-Apply the schema in `supabase/migrations/0001_init.sql` to your Supabase project (SQL editor or the Supabase CLI).
+Apply the Supabase migrations in order from `supabase/migrations/`:
+- `0001_init.sql`
+- `0002_rls_policies.sql`
+- `0003_token_expiry_renewal.sql`
+- `0004_publishing_state_machine.sql`
+- `0005_location_overrides.sql`
+- `0006_billing_subscriptions.sql`
 
 ### Configure environment
 
-Copy the example environment file and fill in the values (see [Configuration](#configuration)):
+Copy `.env.example` to `.env` and fill in your keys (see [Configuration](#configuration)):
 
 ```bash
 cp .env.example .env
 ```
 
-### Run
+### Run locally
 
 ```bash
 npm run dev
 ```
 
 - Dashboard: <http://localhost:3000/dashboard>
-- Onboarding and brand voice: <http://localhost:3000/onboarding>
+- Onboarding & settings: <http://localhost:3000/onboarding>
 
 ---
 
 ## Configuration
 
-| Variable | Purpose |
-| :--- | :--- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service-role key for background jobs (server only, never expose) |
-| `CRON_SECRET` | Bearer token protecting `/api/cron/poll-reviews` |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials (omit to use the mock client) |
-| `RESEND_API_KEY` | Email notifications (omit for console mock) |
-| `TELEGRAM_BOT_TOKEN` | Telegram notifications (omit for console mock) |
-| LLM provider key(s) | Anthropic / OpenAI / Gemini key (omit for local simulator) |
-| App base URL | Used to build `/approve/{token}` links |
+| Variable | Required in Live | Purpose |
+| :--- | :-: | :--- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase client public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase admin key (server-only) |
+| `TOKEN_ENCRYPTION_KEY` | Yes | 32-byte hex secret for AES-256-GCM token encryption |
+| `CRON_SECRET` | Yes | Bearer token protecting `/api/cron/poll-reviews` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | No (mock fallback) | Google Cloud OAuth credentials |
+| `META_WHATSAPP_TOKEN` | No (mock fallback) | Meta WhatsApp Business System User token |
+| `WHATSAPP_PHONE_NUMBER_ID` | No (mock fallback) | 15-digit WhatsApp Business Phone Number ID |
+| `WHATSAPP_TEMPLATE_NAME` | No | Approved template name (default: `review_reply_approval`) |
+| `WHATSAPP_TEMPLATE_LANG` | No | Template language code (default: `ar`) |
+| `TELEGRAM_BOT_TOKEN` | No (mock fallback) | Telegram bot token from @BotFather |
+| `RESEND_API_KEY` | No (mock fallback) | Resend API key for transactional emails |
+| `PAYMOB_API_KEY` / `PAYMOB_HMAC_SECRET` | No (mock fallback) | Egyptian Paymob gateway credentials |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | No (mock fallback) | Stripe payments & webhook validation |
+| `FAWRY_MERCHANT_CODE` / `FAWRY_SECRET_KEY` | No (mock fallback) | Fawry Egyptian cash payment gateway |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | No (simulator fallback) | AI model provider keys |
+| `NEXT_PUBLIC_APP_URL` | Yes | Base app URL (e.g. `https://radd.app`) used for `/approve/[token]` buttons |
 
-Check `.env.example` for the exact variable names used in the code.
+### Scheduling the review poller
 
-### Scheduling the poller
-
-Call the cron endpoint on a schedule (Vercel Cron, GitHub Actions or Supabase `pg_cron`):
+Call the cron endpoint on a scheduled timer (Vercel Cron, GitHub Actions, or Supabase `pg_cron`):
 
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" https://your-domain.com/api/cron/poll-reviews
@@ -318,68 +408,75 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://your-domain.com/api/cron/po
 
 | Route | Type | Purpose |
 | :--- | :--- | :--- |
-| `/dashboard` | Page | Analytics and review timeline, with a **Poll now** button |
-| `/onboarding` | Page | 3-step setup: connect Google, brand voice, notification channel |
-| `/approve/[token]` | Page | One-tap approval page (no login, token-secured) |
-| `/api/google/oauth/*` | API | Google OAuth connect and callback |
-| `/api/cron/poll-reviews` | API | Scheduled review polling (bearer `CRON_SECRET`) |
+| `/dashboard` | Page | Analytics, location selector, review timeline, and manual **Poll now** button |
+| `/onboarding` | Page | 3-step setup: connect Google, configure dialect & brand voice, select notification channel |
+| `/approve/[token]` | Page | One-tap approval page (zero login, mobile-first, 256-bit token secured) |
+| `/api/google/oauth/connect` | API | Initiates Google OAuth consent flow |
+| `/api/google/oauth/callback` | API | Handles Google OAuth code exchange and encrypted token persistence |
+| `/api/google/disconnect` | API | Handles soft disconnection or full GDPR/CCPA data deletion |
+| `/api/cron/poll-reviews` | API | Scheduled review poller with row-level lease locking (`CRON_SECRET`) |
 | `/api/drafts/[token]` | API | Single-use approval decision: approve, edit, skip |
-| `/api/dashboard/settings` | API | Zod-validated updates for business settings, brand profile and location contact details |
+| `/api/drafts/[token]/renew` | API | Token renewal endpoint with rate-limiting and redispatch to owner's channel |
+| `/api/billing/webhook/[gateway]` | API | Webhook receiver for Paymob (HMAC-SHA512), Stripe, and Fawry |
+| `/api/dashboard/settings` | API | Zod-validated settings update for brand profile, location overrides, and alert channels |
 
 ---
 
 ## Verification and evaluation
 
-Each build phase has a runnable verification script, plus a prompt evaluation suite:
+Radd includes a native test suite alongside prompt and real-world review evaluation runners:
 
 ```bash
-npx tsx --env-file=.env scripts/verify-foundation.ts   # database and token crypto
-npx tsx --env-file=.env scripts/verify-part2.ts        # Google ingestion
-npx tsx --env-file=.env scripts/verify-part3.ts        # classifier, drafter, validator
-npx tsx --env-file=.env scripts/verify-part4.ts        # notifications and one-tap approval
-npx tsx --env-file=.env scripts/eval-prompts.ts        # 30-case prompt evaluation
+# Run unit & integration test suites
+npm test
+
+# Run prompt evaluation suite (30 synthetic cases)
+npm run eval:prompts
+
+# Run real-world review evaluation suite (72 real Egyptian reviews)
+npm run eval:real
+
+# Run multi-tenant RLS isolation and token encryption verification
+npx tsx --env-file=.env scripts/verify-rls.ts
 ```
 
-**Evaluation suite (30 cases):**
+### Evaluation suites overview (102 total cases)
 
-| Category | Cases |
-| :--- | :-: |
-| Egyptian Arabic, positive | 6 |
-| Egyptian Arabic, complaints | 6 |
-| Mixed Arabic and English | 6 |
-| English (expat / tourist) | 5 |
-| Adversarial: prompt injection, refund and legal traps | 4 |
-| Star-only reviews with empty text | 3 |
-
-Current result: **30/30 passing.** These cases were written by the project author, so treat the pass rate as a regression check on prompt and model changes.
+| Evaluation Suite | Cases | Focus Areas | Pass Rate |
+| :--- | :-: | :--- | :-: |
+| **Prompt Evaluation** (`eval-prompts.ts`) | 30 | Dialect fidelity, star-only handling, injection defense, compensation trap blocking | **30 / 30 (100%)** |
+| **Real Egyptian Reviews** (`eval-real-reviews.ts`) | 72 | Real café, restaurant, and clinic reviews in Egyptian dialect, tourist complaints, mixed English | **72 / 72 (100%)** |
+| **Test Suites** (`tests/*.test.ts`) | 45+ | Paymob HMAC, Stripe webhooks, WhatsApp templates, Arabic normalization, RLS policies | **All Passing** |
 
 ---
 
 ## Project structure
 
 ```text
-review-reply-bot/
-├── docs/                        # banner, logo and illustrations
-├── scripts/                     # verification + eval runners
+radd/
+├── docs/                        # UI previews, banner, icon, and flow diagrams
+├── scripts/                     # eval runners + RLS verification script
 ├── src/
 │   ├── app/
 │   │   ├── api/
-│   │   │   ├── cron/poll-reviews/     # scheduled polling endpoint
-│   │   │   ├── dashboard/settings/    # settings API (Zod-validated)
-│   │   │   ├── drafts/[token]/        # single-use approval decision
-│   │   │   └── google/oauth/          # OAuth connect + callback
-│   │   ├── approve/[token]/           # one-tap mobile approval page
-│   │   ├── dashboard/                 # analytics + review timeline
-│   │   └── onboarding/                # 3-step setup + brand voice
+│   │   │   ├── billing/webhook/[gateway]/  # Paymob, Stripe, Fawry webhooks
+│   │   │   ├── cron/poll-reviews/          # scheduled polling endpoint
+│   │   │   ├── dashboard/settings/         # settings API (Zod-validated)
+│   │   │   ├── drafts/[token]/             # single-use approval & renewal
+│   │   │   └── google/oauth/               # OAuth connect, callback, disconnect
+│   │   ├── approve/[token]/                # mobile one-tap approval UI
+│   │   ├── dashboard/                      # analytics + review timeline
+│   │   └── onboarding/                     # 3-step setup & brand voice configuration
 │   ├── lib/
-│   │   ├── ai/                        # classifier, drafter, validator, pipeline, prompts
-│   │   ├── approvals/                 # approval decisions + publishing
-│   │   ├── crypto/                    # token generation + hashing
-│   │   ├── google/                    # client (real + mock), ingestor, onboarding
-│   │   ├── notifications/             # email + Telegram dispatcher
-│   │   └── supabase/                  # admin + server clients
+│   │   ├── ai/                             # classifier, drafter, validator, pipeline, prompts
+│   │   ├── approvals/                      # approval state machine & token renewal
+│   │   ├── billing/                        # Paymob, Stripe, Fawry gateways & entitlements
+│   │   ├── crypto/                         # AES-256 encryption, hashing, log scrubber
+│   │   ├── google/                         # client (real + mock), ingestor, lifecycle
+│   │   ├── notifications/                  # WhatsApp, Telegram, Resend dispatcher
+│   │   └── supabase/                       # admin client & RLS configuration
 │   └── types/database.ts
-└── supabase/migrations/0001_init.sql
+└── supabase/migrations/                    # 0001 through 0006 migrations
 ```
 
 ---
@@ -391,6 +488,7 @@ erDiagram
     BUSINESSES ||--o{ LOCATIONS : has
     BUSINESSES ||--o| GOOGLE_CONNECTIONS : connects
     BUSINESSES ||--o| BRAND_PROFILES : configures
+    BUSINESSES ||--o{ SUBSCRIPTIONS : bills
     LOCATIONS ||--o{ REVIEWS : receives
     REVIEWS ||--o{ DRAFTS : gets
 
@@ -399,47 +497,59 @@ erDiagram
         text name
         text slug
         text plan
+        text status
+        timestamp trial_ends_at
+        text notification_channel
+        text notification_target
     }
     GOOGLE_CONNECTIONS {
         text status
         text encrypted_tokens
+        text google_email
+        text last_error
     }
     LOCATIONS {
         text google_account_id
         text google_location_id
+        text display_name
         text contact_phone
-        bool polling_enabled
+        text contact_email
+        bool is_polling_enabled
+        text poll_lock_token
+        timestamp poll_lock_until
     }
     BRAND_PROFILES {
         text tone
-        text dialect
+        text arabic_dialect
         text signature
-        text do_list
-        text dont_list
-        text example_replies
+        text[] do_list
+        text[] dont_list
+        text[] example_replies
     }
     REVIEWS {
         text google_review_id
         int rating
         text text
         text language
-        text flags
+        text[] flags
+        bool requires_careful_review
     }
     DRAFTS {
         text body
         text status
         text approval_token_hash
+        timestamp token_expires_at
+        int attempts
+        timestamp next_retry_at
+    }
+    SUBSCRIPTIONS {
+        text gateway
+        text subscription_id
+        text status
+        int amount_cents
+        text currency
     }
 ```
-
-| Table | Purpose |
-| :--- | :--- |
-| `businesses` | Tenant root: name, slug, plan, notification settings |
-| `google_connections` | OAuth tokens and connection status |
-| `locations` | Store branches: Google account/location IDs, contact phone, polling toggle |
-| `brand_profiles` | Tone, dialect, signature, do/don't rules, example replies |
-| `reviews` | Raw review text, rating, reviewer, detected language, safety flags |
-| `drafts` | Generated replies, status, and the approval token hash |
 
 ---
 
@@ -447,54 +557,51 @@ erDiagram
 
 ```mermaid
 stateDiagram-v2
-    [*] --> pending: draft created and validated
-    pending --> approved: Approve
-    pending --> edited: Edit and post
-    pending --> skipped: Skip
-    approved --> posted: published to Google
-    edited --> posted: published to Google
-    approved --> failed: publish error
-    edited --> failed: publish error
+    [*] --> pending: draft created & validated
+    pending --> posting: Approve & Post / Edit & Post
+    pending --> skipped: Reject / Dismiss
+    posting --> posted: published successfully to Google
+    posting --> failed: publishing error (auto-scheduled retry)
+    failed --> posting: retry backoff trigger
+    failed --> permanent_failure: attempts >= 5
     posted --> [*]
     skipped --> [*]
+    permanent_failure --> [*]
 ```
-
-The `pending` check is atomic and the token is single-use: once a decision is made, any further request with the same link is rejected.
 
 ---
 
 ## FAQ
 
-**Does Radd post replies automatically?**
-No. Every reply needs the owner's explicit approve, edit or skip.
+**Does Radd post replies automatically without human review?**
+No. Every reply requires explicit owner approval via the one-tap approval interface.
 
-**What happens if a review tries to manipulate the AI?**
-The review text is isolated as untrusted data, the classifier flags it, and the validator checks the output regardless.
+**How does WhatsApp approval work?**
+Radd sends an approved Meta WhatsApp template to the owner's phone with dynamic URL buttons. Tapping the button opens `/approve/[token]` where the owner can approve with one click or edit the draft inline.
 
-**Can it run without API keys?**
-Yes. Mock clients for Google, notifications and the LLM let you run and test the complete flow locally.
+**Can Radd run without external API keys?**
+Yes. Complete mock implementations are built-in for Google Business Profile, WhatsApp Cloud API, Resend, Telegram, and LLM generation. You can test the entire flow locally offline.
 
-**Which languages are supported?**
-Egyptian Arabic, English, and mixed Arabic and English reviews, plus star-only reviews with no text.
+**Which Arabic dialects are supported?**
+Egyptian Arabic (عامية مصرية), Modern Standard Arabic (فصحى مبسطة), Gulf Arabic (خليجي), and Levantine Arabic (شامي).
 
-**Can a reply include a phone number or a discount?**
-Only the location's official contact number is allowed. Discounts, vouchers and refund promises are blocked.
+**What payment gateways are supported for subscriptions?**
+Egyptian Paymob (cards & mobile wallets in EGP), international Stripe, and Fawry cash reference codes.
 
-**Which AI provider does it use?**
-The AI layer is pluggable (Anthropic Claude, OpenAI or Google Gemini).
+**What happens if an approval link expires?**
+Links expire after 72 hours. When an owner opens an expired link, they can request a fresh link with one tap, which is securely redispatched to their registered WhatsApp, Telegram, or email.
 
 ---
 
 ## Brand assets
 
-| Asset | File |
-| :--- | :--- |
-| Banner | `docs/radd-github-banner.svg` |
-| Flow illustration | `docs/radd-flow.svg` |
-| Lockup (light) | `docs/radd-lockup-light.svg` |
-| Lockup (dark) | `docs/radd-lockup-dark.svg` |
-| Lockup (mono) | `docs/radd-lockup-mono.svg` |
-| App icon | `docs/radd-icon.svg` |
+| Asset | Description | File |
+| :--- | :--- | :--- |
+| **Banner** | GitHub project banner | [`docs/radd-github-banner.svg`](docs/radd-github-banner.svg) |
+| **Flow diagram** | 3-step architecture illustration | [`docs/radd-flow.svg`](docs/radd-flow.svg) |
+| **Dashboard UI** | Desktop web dashboard preview | [`docs/radd-preview-dashboard.svg`](docs/radd-preview-dashboard.svg) |
+| **Approval UI** | Mobile one-tap approval preview | [`docs/radd-preview-approval.svg`](docs/radd-preview-approval.svg) |
+| **App icon** | Official Radd brand mark | [`docs/radd-icon.svg`](docs/radd-icon.svg) |
 
 <p align="center">
   <img src="docs/radd-icon.svg" alt="Radd app icon" width="96">
@@ -504,17 +611,19 @@ The AI layer is pluggable (Anthropic Claude, OpenAI or Google Gemini).
 
 ## Notes on Google branding
 
-Radd is an independent product. It is not affiliated with, endorsed by, or sponsored by Google. "Google" and "Google Business Profile" are trademarks of Google LLC and are used here only to describe compatibility.
+Radd is an independent product. It is not affiliated with, endorsed by, or sponsored by Google. "Google" and "Google Business Profile" are trademarks of Google LLC and are used here solely for compatibility descriptions.
 
 ---
 
 ## Author
 
-**Mohamed Arafa Shabaan**: Backend and systems integration engineer.
+**Mohamed Arafa Shabaan**: Backend & systems integration engineer.
 [GitHub](https://github.com/mo74x) · [LinkedIn](https://www.linkedin.com/in/mohamed-arafa-6628211b8/)
 
 ---
 
 ## License
 
-Add a `LICENSE` file before publishing and reference it here.
+This project is licensed under the [MIT License](LICENSE) &copy; 2026 Mohamed Arafa Shabaan.
+
+Free and open-source software: you are free to use, modify, and distribute it in accordance with the terms of the MIT license. See the [`LICENSE`](LICENSE) file for the full license text.
