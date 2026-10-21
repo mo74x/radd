@@ -1,9 +1,24 @@
- 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { MapPin, Settings2 } from 'lucide-react';
 import { LocationRow } from '@/types/database';
+import {
+  Badge,
+  Button,
+  Card,
+  Dialog,
+  DialogBody,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Icon,
+  Input,
+  Switch,
+  useToast,
+} from '@/components/ui';
 
 interface LocationSelectorProps {
   locations: (LocationRow & { reviews_count?: number })[];
@@ -11,7 +26,7 @@ interface LocationSelectorProps {
   totalReviewsCount: number;
 }
 
-export default function LocationSelector({
+function LocationSelectorInner({
   locations,
   defaultBrandSignature,
   totalReviewsCount,
@@ -19,6 +34,7 @@ export default function LocationSelector({
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedLocationId = searchParams.get('locationId') || 'all';
+  const toast = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
   const [editingLocation, setEditingLocation] = useState<LocationRow | null>(null);
@@ -62,8 +78,8 @@ export default function LocationSelector({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           locationId: editingLocation.id,
-          contactPhone: formPhone || null,
-          signatureOverride: formSignature || null,
+          contactPhone: formPhone,
+          signatureOverride: formSignature,
           isPollingEnabled: formPolling,
         }),
       });
@@ -73,34 +89,36 @@ export default function LocationSelector({
         throw new Error(data.error || 'Failed to update location overrides');
       }
 
+      toast.success('Branch overrides saved successfully.');
       setIsEditing(false);
       router.refresh();
     } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : 'Error updating location';
+      setSaveError(msg);
+      toast.error(msg);
     } finally {
       setIsSaving(false);
     }
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Location Filter Pills / Dropdown */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
-            📍 Branch Filter:
-          </span>
+  if (locations.length === 0) return null;
 
+  return (
+    <div className="space-y-3 text-start">
+      {/* Branch Pills Filter Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-border-muted dark:bg-surface-raised border border-border select-none">
           <button
             type="button"
             onClick={() => handleSelectLocation('all')}
-            className={`rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all ${
+            className={`min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-150 flex items-center gap-1.5 ${
               selectedLocationId === 'all'
-                ? 'bg-gray-900 text-white shadow-sm'
-                : 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                ? 'bg-surface text-primary shadow-xs'
+                : 'text-text-muted hover:text-text'
             }`}
           >
-            All Branches ({totalReviewsCount})
+            <span>All Branches (الكل)</span>
+            <span className="opacity-70 font-mono">({totalReviewsCount})</span>
           </button>
 
           {locations.map((loc) => {
@@ -112,17 +130,17 @@ export default function LocationSelector({
                 key={loc.id}
                 type="button"
                 onClick={() => handleSelectLocation(loc.id)}
-                className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                className={`min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-150 flex items-center gap-1.5 ${
                   isSelected
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                    ? 'bg-surface text-primary shadow-xs'
+                    : 'text-text-muted hover:text-text'
                 }`}
               >
                 <span>{loc.display_name}</span>
                 {hasOverrides && (
                   <span
-                    title="Per-location overrides active (Phone / Signature)"
-                    className={isSelected ? 'text-emerald-200' : 'text-emerald-600'}
+                    title="Overrides active"
+                    className={isSelected ? 'text-accent' : 'text-primary'}
                   >
                     ★
                   </span>
@@ -133,45 +151,45 @@ export default function LocationSelector({
         </div>
 
         {activeLoc && (
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => handleOpenEdit(activeLoc)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            startIcon={<Icon icon={Settings2} size={15} />}
           >
-            ⚙️ Edit Branch Overrides
-          </button>
+            Edit Branch Overrides
+          </Button>
         )}
       </div>
 
-      {/* Selected Branch Overrides Card (When a specific location is active) */}
+      {/* Selected Branch Overrides Card */}
       {activeLoc && (
-        <div className="rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50/70 to-teal-50/50 p-4 text-xs text-gray-800 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Card className="p-4 bg-teal-50/40 dark:bg-teal-950/20 border-teal-200 dark:border-teal-900/60 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-start">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="font-bold text-gray-900 text-sm">
+                <span className="font-bold text-text text-sm">
                   {activeLoc.display_name}
                 </span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                    activeLoc.is_polling_enabled
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : 'bg-amber-100 text-amber-800'
-                  }`}
+                <Badge
+                  variant={activeLoc.is_polling_enabled ? 'success' : 'warning'}
+                  size="sm"
+                  dot
                 >
                   {activeLoc.is_polling_enabled ? 'Sync Active' : 'Sync Paused'}
-                </span>
+                </Badge>
               </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-gray-600">
+
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
                 <span>
                   📞 Phone Override:{' '}
-                  <strong className="text-gray-900">
-                    {activeLoc.contact_phone || 'Default (No override)'}
+                  <strong className="text-text font-mono">
+                    {activeLoc.contact_phone || 'Default (None)'}
                   </strong>
                 </span>
                 <span>
                   ✍️ Signature Override:{' '}
-                  <strong className="text-gray-900">
+                  <strong className="text-text">
                     {activeLoc.signature_override ||
                       `Default (${defaultBrandSignature || 'Brand Voice'})`}
                   </strong>
@@ -179,115 +197,88 @@ export default function LocationSelector({
               </div>
             </div>
 
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => handleOpenEdit(activeLoc)}
-              className="self-start rounded-lg bg-emerald-600 px-3 py-1.5 font-semibold text-white shadow-sm hover:bg-emerald-700 sm:self-center"
             >
               Configure Overrides
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
       )}
 
-      {/* Modal / Dialog for editing location overrides */}
-      {isEditing && editingLocation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-gray-900">
-                  Edit Branch Overrides
-                </h3>
-                <p className="text-xs text-gray-500">
-                  {editingLocation.display_name}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsEditing(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
+      {/* Dialog for editing location overrides */}
+      {editingLocation && (
+        <Dialog open={isEditing} onClose={() => setIsEditing(false)} size="md">
+          <DialogHeader onClose={() => setIsEditing(false)}>
+            <div className="flex items-center gap-2">
+              <Icon icon={MapPin} size={18} className="text-primary" />
+              <DialogTitle>Edit Branch Overrides</DialogTitle>
             </div>
+            <DialogDescription>
+              Custom contact phone and signature for {editingLocation.display_name}.
+            </DialogDescription>
+          </DialogHeader>
 
-            <form onSubmit={handleSaveOverrides} className="mt-4 space-y-4">
+          <form onSubmit={handleSaveOverrides}>
+            <DialogBody className="space-y-4">
               {saveError && (
-                <div className="rounded-xl bg-red-50 p-3 text-xs text-red-800">
+                <div className="p-3 rounded-xl bg-danger-surface text-danger text-xs font-semibold">
                   {saveError}
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-700">
-                  Branch Phone Number Override
-                </label>
-                <input
-                  type="text"
-                  value={formPhone}
-                  onChange={(e) => setFormPhone(e.target.value)}
-                  placeholder="+201001234567"
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
-                />
-                <p className="mt-1 text-[11px] text-gray-500">
-                  Used in complaint resolutions and safety checks for this branch. Leave blank to omit phone number.
-                </p>
-              </div>
+              <Input
+                label="Branch Phone Number"
+                value={formPhone}
+                onChange={(e) => setFormPhone(e.target.value)}
+                placeholder="+20 10 1234 5678"
+                helperText="Included in AI replies when customers need phone assistance."
+              />
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-700">
-                  Branch Signature Override
-                </label>
-                <input
-                  type="text"
-                  value={formSignature}
-                  onChange={(e) => setFormSignature(e.target.value)}
-                  placeholder="فريق Roastery & Co. - فرع المعادي"
-                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
-                />
-                <p className="mt-1 text-[11px] text-gray-500">
-                  The sign-off at the end of AI replies for this location (e.g. &ldquo;فريق Roastery & Co. - فرع المعادي&rdquo;). Falls back to brand signature if blank.
-                </p>
-              </div>
+              <Input
+                label="Custom Sign-Off Signature"
+                value={formSignature}
+                onChange={(e) => setFormSignature(e.target.value)}
+                placeholder="e.g. — إدارة فرع المعادي"
+                helperText="Appended to the bottom of published review responses."
+              />
 
-              <div className="flex items-center gap-3 pt-1">
-                <input
-                  type="checkbox"
-                  id="loc-polling-toggle"
+              <div className="pt-2">
+                <Switch
+                  label="Google Review Polling"
+                  description="Automatically pull new reviews from this specific branch"
                   checked={formPolling}
-                  onChange={(e) => setFormPolling(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                  onChange={setFormPolling}
                 />
-                <label
-                  htmlFor="loc-polling-toggle"
-                  className="text-xs font-medium text-gray-700 cursor-pointer"
-                >
-                  Enable automated review polling for this location
-                </label>
               </div>
+            </DialogBody>
 
-              <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsEditing(false)}
-                  disabled={isSaving}
-                  className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {isSaving ? 'Saving...' : 'Save Overrides'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => setIsEditing(false)}
+                disabled={isSaving}
+              >
+                Cancel
+              </Button>
+              <Button variant="primary" type="submit" loading={isSaving}>
+                Save Branch Overrides
+              </Button>
+            </DialogFooter>
+          </form>
+        </Dialog>
       )}
     </div>
+  );
+}
+
+export default function LocationSelector(props: LocationSelectorProps) {
+  return (
+    <Suspense fallback={<div className="h-10 w-full rounded-2xl bg-border-muted animate-pulse" />}>
+      <LocationSelectorInner {...props} />
+    </Suspense>
   );
 }

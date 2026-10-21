@@ -1,38 +1,61 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { RefreshCw, AlertTriangle } from 'lucide-react';
+import { Button, Icon, useToast, Tooltip } from '@/components/ui';
 
 export default function PollNowButton({ isRevoked }: { isRevoked?: boolean }) {
   const [polling, setPolling] = useState(false);
   const router = useRouter();
+  const toast = useToast();
 
   async function handlePoll() {
-    if (isRevoked) return;
+    if (isRevoked || polling) return;
     setPolling(true);
     try {
-      await fetch('/api/dashboard/settings', {
+      const res = await fetch('/api/dashboard/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'poll_now' }),
       });
+
+      if (!res.ok) {
+        throw new Error('Failed to sync reviews');
+      }
+
+      toast.success('Reviews synced successfully from Google Business Profile.');
       router.refresh();
+    } catch {
+      toast.error('Sync failed. Please check your Google connection and try again.');
     } finally {
       setPolling(false);
     }
   }
 
+  if (isRevoked) {
+    return (
+      <Tooltip content="Google authorization is expired or revoked. Please reconnect.">
+        <Button
+          variant="outline"
+          disabled
+          startIcon={<Icon icon={AlertTriangle} size={16} className="text-warning" />}
+          className="border-warning/40 text-warning"
+        >
+          Sync Paused (Revoked)
+        </Button>
+      </Tooltip>
+    );
+  }
+
   return (
-    <button
-      type="button"
+    <Button
+      variant="secondary"
+      loading={polling}
       onClick={handlePoll}
-      disabled={polling || isRevoked}
-      title={isRevoked ? 'Google connection is revoked. Reconnect to sync reviews.' : undefined}
-      className={`rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-50 ${
-        isRevoked ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
-      }`}
+      startIcon={!polling ? <Icon icon={RefreshCw} size={16} /> : undefined}
     >
-      {polling ? 'Syncing Google Reviews...' : isRevoked ? '⚠️ Sync Paused (Revoked)' : '🔄 Sync Reviews Now'}
-    </button>
+      {polling ? 'Syncing Reviews...' : 'Sync Reviews Now'}
+    </Button>
   );
 }
