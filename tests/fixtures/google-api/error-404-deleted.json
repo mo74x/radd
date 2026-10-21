@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": 404,
+    "message": "Requested entity was not found or was deleted.",
+    "status": "NOT_FOUND"
+  }
+}

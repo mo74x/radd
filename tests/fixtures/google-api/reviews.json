@@ -1,0 +1,64 @@
+{
+  "reviews": [
+    {
+      "reviewId": "google_rev_pos_001",
+      "reviewer": {
+        "displayName": "أحمد محمود",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/ACg8ocIpos1=s120-c-rp-mo-ba4"
+      },
+      "starRating": "FIVE",
+      "comment": "القهوة تحفة جداً والسبانيش لاتيه مظبوط بالملي، والشباب في المكان قمة في الذوق.",
+      "createTime": "2026-10-20T10:00:00.000000Z",
+      "updateTime": "2026-10-20T10:00:00.000000Z"
+    },
+    {
+      "reviewId": "google_rev_neg_002",
+      "reviewer": {
+        "displayName": "Mariam Hassan",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/ACg8ocIneg2=s120-c-rp-mo-ba4"
+      },
+      "starRating": "ONE",
+      "comment": "الأوردر اتأخر ٤٥ دقيقة ونزل بارد ومحدش اعتذر عن التأخير.",
+      "createTime": "2026-10-20T11:15:00.000000Z",
+      "updateTime": "2026-10-20T11:15:00.000000Z"
+    },
+    {
+      "reviewId": "google_rev_replied_003",
+      "reviewer": {
+        "displayName": "Sherif Zaki",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/ACg8ocIrep3=s120-c-rp-mo-ba4"
+      },
+      "starRating": "FIVE",
+      "comment": "المكان هادي وممتاز للشغل والواي فاي سريع جداً.",
+      "createTime": "2026-10-19T14:30:00.000000Z",
+      "updateTime": "2026-10-19T14:30:00.000000Z",
+      "reviewReply": {
+        "comment": "نورتنا يا أستاذ شريف! مبسوطين إن المكان عجبك ومستنيينك تنورنا دايماً. - فريق Roastery & Co.",
+        "updateTime": "2026-10-19T15:00:00.000000Z"
+      }
+    },
+    {
+      "reviewId": "google_rev_star_only_004",
+      "reviewer": {
+        "displayName": "Karim Adel",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/ACg8ocIstar4=s120-c-rp-mo-ba4"
+      },
+      "starRating": "FOUR",
+      "createTime": "2026-10-20T12:00:00.000000Z",
+      "updateTime": "2026-10-20T12:00:00.000000Z"
+    },
+    {
+      "reviewId": "google_rev_edited_005",
+      "reviewer": {
+        "displayName": "Hany Shenouda",
+        "profilePhotoUrl": "https://lh3.googleusercontent.com/a/ACg8ocIedit5=s120-c-rp-mo-ba4"
+      },
+      "starRating": "FIVE",
+      "comment": "تعديل: الإدارة تواصلت معايا وحلت المشكلة باحترافية كبيرة، شكراً لاهتمامكم والقهوة ممتازة.",
+      "createTime": "2026-10-18T09:00:00.000000Z",
+      "updateTime": "2026-10-20T16:45:00.000000Z"
+    }
+  ],
+  "averageRating": 4.0,
+  "totalReviewCount": 5
+}

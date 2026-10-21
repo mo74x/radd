@@ -42,7 +42,8 @@ export async function generateReviewDraft(params: {
     retryFeedback,
   } = params;
 
-  const signature = brand.signature || `فريق ${businessName}`;
+  const signature =
+    location.signature_override || brand.signature || `فريق ${businessName}`;
   const cleanName = !isSuspiciousReviewerName(review.reviewer_name)
     ? review.reviewer_name!.split(' ')[0]
     : null;

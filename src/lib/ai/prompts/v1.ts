@@ -57,6 +57,9 @@ export function buildDrafterSystemPrompt(params: {
 - Thank the reviewer warmly (use their name if it looks like a real person's name; if it looks like a handle or fake name like "System Tester", do not use the name).
 - Reference 1 specific detail they liked if mentioned in the review. Never invent facts about their visit.`;
 
+  const effectiveSignature =
+    location.signature_override || brand.signature || businessName;
+
   return `You draft Google review replies for "${businessName}" (${location.display_name}).
 
 SECURITY MANDATE:
@@ -68,7 +71,7 @@ BRAND VOICE & RULES:
 - Language Rule: ${languageInstruction}
 - ${complaintInstruction}
 - Keep it short: 2 to 3 sentences maximum.
-- Signature to end with: ${brand.signature || businessName}
+- Signature to end with: ${effectiveSignature}
 ${brand.do_list.length > 0 ? `- DO:\n  * ${brand.do_list.join('\n  * ')}` : ''}
 ${brand.dont_list.length > 0 ? `- DO NOT:\n  * ${brand.dont_list.join('\n  * ')}` : ''}
 ${

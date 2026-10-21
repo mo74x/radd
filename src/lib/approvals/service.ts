@@ -2,7 +2,12 @@
 import 'server-only';
 import { generateApprovalToken, hashApprovalToken } from '@/lib/crypto/tokens';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { googleGBP } from '@/lib/google/client';
+import {
+  googleGBP,
+  GoogleRateLimitError,
+  GoogleReviewNotFoundError,
+  GoogleReplyConflictError,
+} from '@/lib/google/client';
 import { sendOwnerNotification } from '@/lib/notifications/dispatcher';
 import { validateDraftReply } from '@/lib/ai/validator';
 import {
@@ -220,6 +225,54 @@ export async function executeApprovalDecision(params: {
       warnings: ownerWarnings.length > 0 ? ownerWarnings : undefined,
     };
   } catch (err: any) {
+    if (err instanceof GoogleReviewNotFoundError) {
+      await supabaseAdmin
+        .from('drafts')
+        .update({
+          status: 'failed',
+          last_error: err.message,
+          next_retry_at: null,
+        })
+        .eq('id', ctx.draft.id);
+
+      throw new Error(`Review was deleted on Google Business Profile: ${err.message}`);
+    }
+
+    if (err instanceof GoogleReplyConflictError) {
+      const postedAt = new Date().toISOString();
+      await supabaseAdmin
+        .from('drafts')
+        .update({
+          status: 'posted',
+          posted_at: postedAt,
+          google_reply_posted_at: postedAt,
+          last_error: err.message,
+          next_retry_at: null,
+        })
+        .eq('id', ctx.draft.id);
+
+      return {
+        status: 'posted',
+        finalBody: finalReply,
+        postedAt,
+        warnings: ownerWarnings.length > 0 ? ownerWarnings : undefined,
+      };
+    }
+
+    if (err instanceof GoogleRateLimitError) {
+      const nextRetryAt = new Date(Date.now() + err.retryAfterSeconds * 1000).toISOString();
+      await supabaseAdmin
+        .from('drafts')
+        .update({
+          status: 'failed',
+          last_error: err.message,
+          next_retry_at: nextRetryAt,
+        })
+        .eq('id', ctx.draft.id);
+
+      throw new Error(`Google rate limit encountered: ${err.message}`);
+    }
+
     const nextRetryAt = computeNextRetryAt(nextAttempt);
     await supabaseAdmin
       .from('drafts')

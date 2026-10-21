@@ -35,6 +35,7 @@ export interface LocationRow {
   display_name: string;
   contact_phone: string | null;
   contact_email: string | null;
+  signature_override?: string | null;
   is_polling_enabled: boolean;
   last_polled_at: string | null;
   last_review_update_time: string | null;

@@ -2,7 +2,11 @@
 import 'server-only';
 import crypto from 'node:crypto';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { googleGBP, GoogleAuthRevokedError } from '@/lib/google/client';
+import {
+  googleGBP,
+  GoogleAuthRevokedError,
+  GoogleRateLimitError,
+} from '@/lib/google/client';
 import { processReviewAndCreateDraft } from '@/lib/ai/pipeline';
 import { sendOwnerNotification } from '@/lib/notifications/dispatcher';
 import { BusinessRow, LocationRow, ReviewRow } from '@/types/database';
@@ -11,6 +15,7 @@ export interface PollSummary {
   locationsPolled: number;
   locationsSkippedDueToLock: number;
   newReviewsInserted: number;
+  reviewsUpdated: number;
   draftsCreated: number;
   notificationsSent: number;
   newReviewIds: string[];
@@ -19,11 +24,6 @@ export interface PollSummary {
 
 /**
  * Atomically acquires a 5-minute lease lock on a location to prevent concurrent polling races.
- * Executes:
- * update locations
- * set poll_lock_until = now() + interval '5 minutes', poll_lock_token = $token
- * where id = $locationId and (poll_lock_until is null or poll_lock_until < now())
- * returning id;
  */
 export async function acquireLocationPollLease(
   locationId: string,
@@ -105,6 +105,7 @@ export async function pollAllActiveLocations(batchSize = 25): Promise<PollSummar
     locationsPolled: 0,
     locationsSkippedDueToLock: 0,
     newReviewsInserted: 0,
+    reviewsUpdated: 0,
     draftsCreated: 0,
     notificationsSent: 0,
     newReviewIds: [],
@@ -131,32 +132,90 @@ export async function pollAllActiveLocations(batchSize = 25): Promise<PollSummar
 
       summary.locationsPolled += 1;
 
-      const unanswered = fetchedReviews.filter((r) => !r.hasExistingReply);
+      for (const rev of fetchedReviews) {
+        // Check if review was already ingested previously
+        const { data: existingReview } = await supabaseAdmin
+          .from('reviews')
+          .select('*, drafts (*)')
+          .eq('location_id', loc.id)
+          .eq('google_review_id', rev.googleReviewId)
+          .maybeSingle();
 
-      for (const rev of unanswered) {
+        if (existingReview) {
+          // Edge case 1: Review was edited by the author on Google (updateTime is newer)
+          const isEdited =
+            rev.googleUpdatedAt &&
+            existingReview.google_updated_at &&
+            new Date(rev.googleUpdatedAt).getTime() >
+              new Date(existingReview.google_updated_at).getTime();
+
+          if (isEdited) {
+            await supabaseAdmin
+              .from('reviews')
+              .update({
+                rating: rev.rating,
+                reviewer_name: rev.reviewerName,
+                text: rev.text,
+                google_updated_at: rev.googleUpdatedAt,
+              })
+              .eq('id', existingReview.id);
+
+            summary.reviewsUpdated += 1;
+          }
+
+          // Edge case 2: Merchant already replied on Google directly outside the bot
+          if (rev.hasExistingReply) {
+            const pendingDraft = (existingReview.drafts as any[])?.find(
+              (d: any) => d.status === 'pending' || d.status === 'posting'
+            );
+            if (pendingDraft) {
+              await supabaseAdmin
+                .from('drafts')
+                .update({
+                  status: 'posted',
+                  last_error: 'Replied directly on Google Business Profile',
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', pendingDraft.id);
+            }
+          }
+          continue;
+        }
+
+        // New review already answered on Google: insert for record keeping, skip drafting
+        if (rev.hasExistingReply) {
+          await supabaseAdmin.from('reviews').insert({
+            business_id: loc.business_id,
+            location_id: loc.id,
+            google_review_id: rev.googleReviewId,
+            rating: rev.rating,
+            reviewer_name: rev.reviewerName,
+            text: rev.text,
+            google_created_at: rev.googleCreatedAt,
+            google_updated_at: rev.googleUpdatedAt,
+          });
+          continue;
+        }
+
+        // Fresh review without existing reply: insert & process draft
         const { data: inserted, error: insertErr } = await supabaseAdmin
           .from('reviews')
-          .upsert(
-            {
-              business_id: loc.business_id,
-              location_id: loc.id,
-              google_review_id: rev.googleReviewId,
-              rating: rev.rating,
-              reviewer_name: rev.reviewerName,
-              text: rev.text,
-              google_created_at: rev.googleCreatedAt,
-              google_updated_at: rev.googleUpdatedAt,
-            },
-            {
-              onConflict: 'location_id,google_review_id',
-              ignoreDuplicates: true,
-            }
-          )
+          .insert({
+            business_id: loc.business_id,
+            location_id: loc.id,
+            google_review_id: rev.googleReviewId,
+            rating: rev.rating,
+            reviewer_name: rev.reviewerName,
+            text: rev.text,
+            google_created_at: rev.googleCreatedAt,
+            google_updated_at: rev.googleUpdatedAt,
+          })
           .select('*')
           .maybeSingle<ReviewRow>();
 
         if (insertErr) {
-          throw new Error(`Failed inserting review ${rev.googleReviewId}: ${insertErr.message}`);
+          // If concurrent poller inserted it, safely ignore
+          continue;
         }
 
         if (inserted?.id) {
@@ -167,7 +226,6 @@ export async function pollAllActiveLocations(batchSize = 25): Promise<PollSummar
           const pipelineOut = await processReviewAndCreateDraft(inserted.id);
 
           if (pipelineOut.isDuplicate) {
-            // Conflict-tolerant: draft already created by concurrent worker; skip duplicate notification
             continue;
           }
 
@@ -203,6 +261,11 @@ export async function pollAllActiveLocations(batchSize = 25): Promise<PollSummar
         summary.errors.push({
           locationId: loc.id,
           error: 'OAuth access revoked by user — business paused',
+        });
+      } else if (err instanceof GoogleRateLimitError) {
+        summary.errors.push({
+          locationId: loc.id,
+          error: `Google API rate limited (HTTP 429). Retry in ${err.retryAfterSeconds}s`,
         });
       } else {
         summary.errors.push({ locationId: loc.id, error: err.message });

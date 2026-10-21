@@ -1,0 +1,57 @@
+{
+  "locations": [
+    {
+      "name": "locations/5544332211",
+      "title": "Roastery & Co. Specialty Coffee - Maadi",
+      "storeCode": "MAADI-01",
+      "phoneNumbers": {
+        "primaryPhone": "+201001234567",
+        "additionalPhones": ["+20225198765"]
+      },
+      "categories": {
+        "primaryCategory": {
+          "name": "gcid:coffee_shop",
+          "displayName": "Coffee Shop"
+        }
+      },
+      "storefrontAddress": {
+        "regionCode": "EG",
+        "languageCode": "ar",
+        "postalCode": "11728",
+        "administrativeArea": "Cairo Governorate",
+        "locality": "Maadi",
+        "addressLines": ["Road 9, Degla"]
+      },
+      "latlng": {
+        "latitude": 29.9602,
+        "longitude": 31.2569
+      }
+    },
+    {
+      "name": "locations/8877665544",
+      "title": "Roastery & Co. Specialty Coffee - Sheikh Zayed",
+      "storeCode": "ZAYED-02",
+      "phoneNumbers": {
+        "primaryPhone": "+201109876543"
+      },
+      "categories": {
+        "primaryCategory": {
+          "name": "gcid:coffee_shop",
+          "displayName": "Coffee Shop"
+        }
+      },
+      "storefrontAddress": {
+        "regionCode": "EG",
+        "languageCode": "ar",
+        "postalCode": "12588",
+        "administrativeArea": "Giza Governorate",
+        "locality": "Sheikh Zayed",
+        "addressLines": ["Capital Promenade, 26th of July Corridor"]
+      },
+      "latlng": {
+        "latitude": 30.0131,
+        "longitude": 30.9856
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "accounts": [
+    {
+      "name": "accounts/100998877",
+      "accountName": "Roastery & Co. Coffee Group",
+      "type": "LOCATION_GROUP",
+      "role": "OWNER",
+      "state": {
+        "status": "VERIFIED"
+      },
+      "accountNumber": "AC-100998877"
+    }
+  ]
+}

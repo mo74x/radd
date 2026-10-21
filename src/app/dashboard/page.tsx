@@ -1,10 +1,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// src/app/dashboard/page.tsx
 import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import PollNowButton from './PollNowButton';
+import LocationSelector from './LocationSelector';
 
-export default async function DashboardPage() {
+interface DashboardPageProps {
+  searchParams?: Promise<{ locationId?: string }> | { locationId?: string };
+}
+
+export default async function DashboardPage(props: DashboardPageProps) {
+  const resolvedParams = props.searchParams ? await props.searchParams : {};
+  const selectedLocationId = resolvedParams.locationId;
+
   const { data: business } = await supabaseAdmin
     .from('businesses')
     .select('*')
@@ -25,12 +32,12 @@ export default async function DashboardPage() {
     );
   }
 
-  const [reviewsRes, connRes] = await Promise.all([
+  const [reviewsRes, connRes, locationsRes, brandRes] = await Promise.all([
     supabaseAdmin
       .from('reviews')
       .select(`
         *,
-        locations ( display_name ),
+        locations ( id, display_name, contact_phone, signature_override ),
         drafts (*)
       `)
       .eq('business_id', business.id)
@@ -40,14 +47,33 @@ export default async function DashboardPage() {
       .select('status, google_email, last_error, updated_at')
       .eq('business_id', business.id)
       .maybeSingle(),
+    supabaseAdmin
+      .from('locations')
+      .select('*')
+      .eq('business_id', business.id)
+      .order('display_name', { ascending: true }),
+    supabaseAdmin
+      .from('brand_profiles')
+      .select('*')
+      .eq('business_id', business.id)
+      .maybeSingle(),
   ]);
 
-  const allReviews = reviewsRes.data ?? [];
+  const rawReviews = reviewsRes.data ?? [];
   const googleConn = connRes.data;
+  const locations = locationsRes.data ?? [];
+  const brand = brandRes.data;
+
   const isRevoked =
     business.status === 'revoked' ||
     googleConn?.status === 'revoked' ||
     (googleConn?.status === 'error' && Boolean(googleConn.last_error?.includes('revoked')));
+
+  // Filter reviews by active location if selected
+  const allReviews =
+    selectedLocationId && selectedLocationId !== 'all'
+      ? rawReviews.filter((r) => r.location_id === selectedLocationId)
+      : rawReviews;
 
   const totalReviews = allReviews.length;
 
@@ -209,131 +235,156 @@ export default async function DashboardPage() {
           </div>
         </div>
 
+        {/* Location Selector & Branch Overrides Bar */}
+        <LocationSelector
+          locations={locations}
+          defaultBrandSignature={brand?.signature ?? null}
+          totalReviewsCount={rawReviews.length}
+        />
+
         {/* Review & Reply History */}
         <div className="space-y-4">
-          <h2 className="text-lg font-bold text-gray-900">
-            Review & Draft History ({totalReviews})
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-900">
+              Review & Draft History ({totalReviews})
+            </h2>
+            {selectedLocationId && selectedLocationId !== 'all' && (
+              <span className="text-xs text-gray-500">
+                Filtered by branch
+              </span>
+            )}
+          </div>
 
-          {allReviews.map((rev: any) => {
-            const draft = Array.isArray(rev.drafts) ? rev.drafts[0] : rev.drafts;
-            const stars = '★'.repeat(rev.rating) + '☆'.repeat(5 - rev.rating);
+          {allReviews.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
+              No reviews found for this branch selection.
+            </div>
+          ) : (
+            allReviews.map((rev: any) => {
+              const draft = Array.isArray(rev.drafts) ? rev.drafts[0] : rev.drafts;
+              const stars = '★'.repeat(rev.rating) + '☆'.repeat(5 - rev.rating);
 
-            return (
-              <div
-                key={rev.id}
-                className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-gray-900">
-                      {rev.reviewer_name || 'Customer'}
-                    </span>
-                    <span className="text-amber-500">{stars}</span>
-                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                      lang: {rev.language || 'auto'}
-                    </span>
-                    {rev.flags?.map((flag: string) => (
-                      <span
-                        key={flag}
-                        className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800"
-                      >
-                        ⚠️ {flag}
+              return (
+                <div
+                  key={rev.id}
+                  className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-gray-900">
+                        {rev.reviewer_name || 'Customer'}
                       </span>
-                    ))}
+                      <span className="text-amber-500">{stars}</span>
+                      {rev.locations?.display_name && (
+                        <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                          📍 {rev.locations.display_name}
+                        </span>
+                      )}
+                      <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                        lang: {rev.language || 'auto'}
+                      </span>
+                      {rev.flags?.map((flag: string) => (
+                        <span
+                          key={flag}
+                          className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800"
+                        >
+                          ⚠️ {flag}
+                        </span>
+                      ))}
+                    </div>
+
+                    {draft && (
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${
+                          draft.status === 'posted'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : draft.status === 'posting'
+                            ? 'bg-sky-100 text-sky-800 animate-pulse'
+                            : draft.status === 'pending'
+                            ? 'bg-amber-100 text-amber-800'
+                            : draft.status === 'failed'
+                            ? 'bg-red-100 text-red-800'
+                            : draft.status === 'expired'
+                            ? 'bg-orange-100 text-orange-800'
+                            : 'bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        {draft.status === 'posting'
+                          ? 'Posting...'
+                          : draft.status === 'failed'
+                          ? (draft.attempts || 0) < 5
+                            ? `Failed (Retrying ${draft.attempts || 1}/5)`
+                            : 'Failed (Needs Attention)'
+                          : draft.status}
+                      </span>
+                    )}
                   </div>
+
+                  <p dir="auto" className="mt-3 text-sm text-gray-800">
+                    {rev.text || (
+                      <span className="italic text-gray-400">
+                        (Star rating only — no comment)
+                      </span>
+                    )}
+                  </p>
 
                   {draft && (
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${
-                        draft.status === 'posted'
-                          ? 'bg-emerald-100 text-emerald-800'
+                    <div
+                      className={`mt-4 rounded-xl border p-3.5 ${
+                        draft.status === 'failed'
+                          ? 'border-red-200 bg-red-50/40'
                           : draft.status === 'posting'
-                          ? 'bg-sky-100 text-sky-800 animate-pulse'
-                          : draft.status === 'pending'
-                          ? 'bg-amber-100 text-amber-800'
-                          : draft.status === 'failed'
-                          ? 'bg-red-100 text-red-800'
-                          : draft.status === 'expired'
-                          ? 'bg-orange-100 text-orange-800'
-                          : 'bg-gray-100 text-gray-700'
+                          ? 'border-sky-200 bg-sky-50/40'
+                          : 'border-emerald-100 bg-emerald-50/50'
                       }`}
                     >
-                      {draft.status === 'posting'
-                        ? 'Posting...'
-                        : draft.status === 'failed'
-                        ? (draft.attempts || 0) < 5
-                          ? `Failed (Retrying ${draft.attempts || 1}/5)`
-                          : 'Failed (Needs Attention)'
-                        : draft.status}
-                    </span>
-                  )}
-                </div>
-
-                <p dir="auto" className="mt-3 text-sm text-gray-800">
-                  {rev.text || (
-                    <span className="italic text-gray-400">
-                      (Star rating only — no comment)
-                    </span>
-                  )}
-                </p>
-
-                {draft && (
-                  <div
-                    className={`mt-4 rounded-xl border p-3.5 ${
-                      draft.status === 'failed'
-                        ? 'border-red-200 bg-red-50/40'
-                        : draft.status === 'posting'
-                        ? 'border-sky-200 bg-sky-50/40'
-                        : 'border-emerald-100 bg-emerald-50/50'
-                    }`}
-                  >
-                    <div className="mb-1 flex items-center justify-between text-xs text-gray-600">
-                      <span className="font-semibold">
-                        {draft.final_body ? 'Final Reply:' : 'AI Drafted Reply:'}
-                      </span>
-                      <span>
-                        {draft.model} ({draft.prompt_version})
-                      </span>
-                    </div>
-                    <p dir="auto" className="text-sm text-gray-900">
-                      {draft.final_body || draft.body}
-                    </p>
-
-                    {draft.status === 'failed' && (
-                      <div className="mt-2.5 rounded-lg bg-red-100/90 p-2.5 text-xs text-red-900">
-                        <div className="font-semibold">
-                          {(draft.attempts || 0) < 5
-                            ? '⚠️ Posting failed — automatic retry scheduled'
-                            : '❌ Posting failed permanently — needs attention'}
-                        </div>
-                        {draft.last_error && (
-                          <div className="mt-1 font-mono text-[11px] text-red-800">
-                            Error: {draft.last_error}
-                          </div>
-                        )}
-                        {draft.next_retry_at && (draft.attempts || 0) < 5 && (
-                          <div className="mt-1 text-red-700">
-                            Next retry: {new Date(draft.next_retry_at).toLocaleTimeString()}{' '}
-                            (Attempt {draft.attempts || 1}/5)
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {draft.status === 'posting' && (
-                      <div className="mt-2.5 flex items-center gap-2 rounded-lg bg-sky-100/90 p-2 text-xs text-sky-900">
-                        <span className="inline-block h-2 w-2 animate-ping rounded-full bg-sky-600" />
+                      <div className="mb-1 flex items-center justify-between text-xs text-gray-600">
+                        <span className="font-semibold">
+                          {draft.final_body ? 'Final Reply:' : 'AI Drafted Reply:'}
+                        </span>
                         <span>
-                          Publishing in progress (attempt {draft.attempts || 1})...
+                          {draft.model} ({draft.prompt_version})
                         </span>
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                      <p dir="auto" className="text-sm text-gray-900">
+                        {draft.final_body || draft.body}
+                      </p>
+
+                      {draft.status === 'failed' && (
+                        <div className="mt-2.5 rounded-lg bg-red-100/90 p-2.5 text-xs text-red-900">
+                          <div className="font-semibold">
+                            {(draft.attempts || 0) < 5
+                              ? '⚠️ Posting failed — automatic retry scheduled'
+                              : '❌ Posting failed permanently — needs attention'}
+                          </div>
+                          {draft.last_error && (
+                            <div className="mt-1 font-mono text-[11px] text-red-800">
+                              Error: {draft.last_error}
+                            </div>
+                          )}
+                          {draft.next_retry_at && (draft.attempts || 0) < 5 && (
+                            <div className="mt-1 text-red-700">
+                              Next retry: {new Date(draft.next_retry_at).toLocaleTimeString()}{' '}
+                              (Attempt {draft.attempts || 1}/5)
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {draft.status === 'posting' && (
+                        <div className="mt-2.5 flex items-center gap-2 rounded-lg bg-sky-100/90 p-2 text-xs text-sky-900">
+                          <span className="inline-block h-2 w-2 animate-ping rounded-full bg-sky-600" />
+                          <span>
+                            Publishing in progress (attempt {draft.attempts || 1})...
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </main>
