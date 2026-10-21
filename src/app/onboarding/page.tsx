@@ -17,7 +17,7 @@ export default function OnboardingPage() {
   const [locationsCount, setLocationsCount] = useState(0);
   const [privacyLoading, setPrivacyLoading] = useState(false);
 
-  const [notificationChannel, setNotificationChannel] = useState<'email' | 'telegram'>('email');
+  const [notificationChannel, setNotificationChannel] = useState<'email' | 'telegram' | 'whatsapp'>('whatsapp');
   const [notificationTarget, setNotificationTarget] = useState('');
   const [contactPhone, setContactPhone] = useState('');
 
@@ -35,9 +35,9 @@ export default function OnboardingPage() {
         const data = await res.json();
         setBusinessId(data.business.id);
         setBusinessName(data.business.name);
-        setNotificationChannel(
-          data.business.notification_channel === 'telegram' ? 'telegram' : 'email'
-        );
+        if (data.business.notification_channel) {
+          setNotificationChannel(data.business.notification_channel);
+        }
         setNotificationTarget(data.business.notification_target || '');
         const connStatus = data.googleConnection?.status ?? 'none';
         setGoogleStatus(connStatus);
@@ -384,18 +384,21 @@ export default function OnboardingPage() {
                 <select
                   value={notificationChannel}
                   onChange={(e) =>
-                    setNotificationChannel(e.target.value as 'email' | 'telegram')
+                    setNotificationChannel(e.target.value as 'email' | 'telegram' | 'whatsapp')
                   }
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
                 >
-                  <option value="email">Email (Signed Magic Link)</option>
+                  <option value="whatsapp">WhatsApp (Meta Cloud API / One-Tap)</option>
                   <option value="telegram">Telegram Bot (Instant Push)</option>
+                  <option value="email">Email (Signed Magic Link)</option>
                 </select>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold uppercase text-gray-700">
-                  {notificationChannel === 'telegram'
+                  {notificationChannel === 'whatsapp'
+                    ? 'WhatsApp Phone Number (+201001234567)'
+                    : notificationChannel === 'telegram'
                     ? 'Telegram Chat ID'
                     : 'Owner Email Address'}
                 </label>
@@ -404,7 +407,9 @@ export default function OnboardingPage() {
                   value={notificationTarget}
                   onChange={(e) => setNotificationTarget(e.target.value)}
                   placeholder={
-                    notificationChannel === 'telegram'
+                    notificationChannel === 'whatsapp'
+                      ? '+201001234567'
+                      : notificationChannel === 'telegram'
                       ? '123456789'
                       : 'owner@business.com'
                   }

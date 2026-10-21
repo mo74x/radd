@@ -475,6 +475,10 @@ export function maskNotificationTarget(
     if (target.length <= 4) return `Telegram (***)`;
     return `Telegram (***${target.slice(-3)})`;
   }
+  if (channel === 'whatsapp') {
+    if (target.length <= 4) return `WhatsApp (***)`;
+    return `WhatsApp (***${target.slice(-4)})`;
+  }
   return target.length > 4 ? `***${target.slice(-4)}` : '***';
 }
 

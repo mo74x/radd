@@ -3,6 +3,7 @@ import { generateApprovalToken } from '@/lib/crypto/tokens';
 import { classifyReview } from '@/lib/ai/classifier';
 import { generateReviewDraft } from '@/lib/ai/drafter';
 import { validateDraftReply } from '@/lib/ai/validator';
+import { checkDraftingEntitlement, SubscriptionRequiredError } from '@/lib/billing/entitlements';
 import {
   BrandProfileRow,
   BusinessRow,
@@ -77,6 +78,16 @@ export async function processReviewAndCreateDraft(
 
   const business = bizRes.data;
   const location = locRes.data;
+
+  // 2b. Subscription & Entitlement Guard: Verify active trial or active subscription
+  const entitlement = await checkDraftingEntitlement(business.id);
+  if (!entitlement.entitled) {
+    throw new SubscriptionRequiredError(
+      business.id,
+      entitlement.reason || 'Active subscription required to generate AI drafts.'
+    );
+  }
+
   const brand: BrandProfileRow = brandRes.data ?? {
     business_id: business.id,
     tone: 'warm, polite Egyptian hospitality',

@@ -14,6 +14,31 @@ export type DraftStatus =
   | 'failed'
   | 'expired';
 
+export type SubscriptionGateway = 'paymob' | 'fawry' | 'stripe';
+export type SubscriptionStatus =
+  | 'active'
+  | 'past_due'
+  | 'canceled'
+  | 'trialing'
+  | 'unpaid';
+
+export interface SubscriptionRow {
+  id: string;
+  business_id: string;
+  gateway: SubscriptionGateway;
+  plan: BusinessPlan;
+  status: SubscriptionStatus;
+  external_customer_id: string | null;
+  external_subscription_id: string | null;
+  current_period_start: string;
+  current_period_end: string;
+  cancel_at_period_end: boolean;
+  currency: string;
+  amount_cents: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface BusinessRow {
   id: string;
   owner_id: string;

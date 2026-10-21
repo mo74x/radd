@@ -77,7 +77,13 @@ export default function ExpiredApprovalCard({ token }: ExpiredApprovalCardProps)
 
         <div className="mt-4 rounded-xl bg-white p-4 text-xs text-gray-700 shadow-sm sm:text-sm">
           <p className="font-semibold text-gray-900">
-            تم إرسال رابط الموافقة الجديد إلى {result.channel === 'telegram' ? 'حساب تيليجرام' : 'البريد الإلكتروني'}:
+            تم إرسال رابط الموافقة الجديد إلى{' '}
+            {result.channel === 'whatsapp'
+              ? 'واتساب (WhatsApp)'
+              : result.channel === 'telegram'
+              ? 'حساب تيليجرام'
+              : 'البريد الإلكتروني'}
+            :
           </p>
           <p className="mt-1 font-mono font-medium text-emerald-700">
             {result.targetMasked}

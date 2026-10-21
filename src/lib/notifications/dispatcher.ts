@@ -6,6 +6,10 @@ import {
   LocationRow,
   ReviewRow,
 } from '@/types/database';
+import {
+  sendWhatsAppNotification,
+  sendWhatsAppReconnectionAlert,
+} from './whatsapp';
 
 export interface NotificationPayload {
   business: BusinessRow;
@@ -60,6 +64,10 @@ export async function sendOwnerNotification(
 
   if (business.notification_channel === 'telegram') {
     return sendTelegramNotification(payload);
+  }
+
+  if (business.notification_channel === 'whatsapp') {
+    return sendWhatsAppNotification(payload);
   }
 
   return sendEmailNotification(payload);
@@ -265,6 +273,15 @@ export async function sendReconnectionNotification(
     }
 
     return { channel: 'telegram', delivered: true, mode: 'live' };
+  }
+
+  // WhatsApp Notification
+  if (business.notification_channel === 'whatsapp') {
+    return sendWhatsAppReconnectionAlert({
+      business,
+      reason: reason || 'OAuth token revoked or expired (invalid_grant / 401 / 403)',
+      reconnectUrl,
+    });
   }
 
   // Email Notification

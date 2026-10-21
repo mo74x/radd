@@ -7,6 +7,7 @@ import {
   GoogleAuthRevokedError,
   GoogleRateLimitError,
 } from '@/lib/google/client';
+import { SubscriptionRequiredError } from '@/lib/billing/entitlements';
 import { processReviewAndCreateDraft } from '@/lib/ai/pipeline';
 import { sendOwnerNotification } from '@/lib/notifications/dispatcher';
 import { BusinessRow, LocationRow, ReviewRow } from '@/types/database';
@@ -222,29 +223,40 @@ export async function pollAllActiveLocations(batchSize = 25): Promise<PollSummar
           summary.newReviewsInserted += 1;
           summary.newReviewIds.push(inserted.id);
 
-          // Automatically run Phase 2 (Drafting) + Phase 3 (Notification)
-          const pipelineOut = await processReviewAndCreateDraft(inserted.id);
+          try {
+            // Automatically run Phase 2 (Drafting) + Phase 3 (Notification)
+            const pipelineOut = await processReviewAndCreateDraft(inserted.id);
 
-          if (pipelineOut.isDuplicate) {
-            continue;
+            if (pipelineOut.isDuplicate) {
+              continue;
+            }
+
+            summary.draftsCreated += 1;
+
+            const { data: updatedReview } = await supabaseAdmin
+              .from('reviews')
+              .select('*')
+              .eq('id', inserted.id)
+              .single<ReviewRow>();
+
+            await sendOwnerNotification({
+              business,
+              location: loc as LocationRow,
+              review: updatedReview ?? inserted,
+              draft: pipelineOut.draft,
+              approvalUrl: pipelineOut.approvalUrl,
+            });
+            summary.notificationsSent += 1;
+          } catch (pipelineErr: any) {
+            if (pipelineErr instanceof SubscriptionRequiredError) {
+              summary.errors.push({
+                locationId: loc.id,
+                error: `Subscription required: ${pipelineErr.message}`,
+              });
+              break;
+            }
+            throw pipelineErr;
           }
-
-          summary.draftsCreated += 1;
-
-          const { data: updatedReview } = await supabaseAdmin
-            .from('reviews')
-            .select('*')
-            .eq('id', inserted.id)
-            .single<ReviewRow>();
-
-          await sendOwnerNotification({
-            business,
-            location: loc as LocationRow,
-            review: updatedReview ?? inserted,
-            draft: pipelineOut.draft,
-            approvalUrl: pipelineOut.approvalUrl,
-          });
-          summary.notificationsSent += 1;
         }
       }
 
