@@ -27,14 +27,14 @@ export const MOBILE_TAB_ITEMS = [
     id: 'notifications',
     labelKey: 'navigation.notifications',
     defaultLabel: 'Notifications',
-    href: '/dashboard#notifications',
+    href: '/dashboard/settings?tab=notifications',
     icon: BellRing,
   },
   {
     id: 'settings',
     labelKey: 'navigation.settings',
     defaultLabel: 'Settings',
-    href: '/dashboard#settings',
+    href: '/dashboard/settings',
     icon: Settings,
   },
 ];
@@ -60,8 +60,10 @@ export const BottomTabBar: React.FC<{ className?: string }> = ({ className }) =>
         const isActive =
           item.href === '/dashboard'
             ? pathname === '/dashboard'
-            : item.href === '/dashboard/reviews'
+            : item.href.startsWith('/dashboard/reviews')
             ? pathname.startsWith('/dashboard/reviews')
+            : item.href.startsWith('/dashboard/settings')
+            ? pathname.startsWith('/dashboard/settings')
             : false;
         const label = t(item.labelKey) !== item.labelKey ? t(item.labelKey) : item.defaultLabel;
 

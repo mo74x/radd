@@ -517,9 +517,21 @@ export const ReviewDetailContent: React.FC<ReviewDetailContentProps> = ({
           <div className="flex items-center gap-2 pt-1 text-xs text-text-muted">
             <Icon icon={Info} size={13} className="text-primary shrink-0" />
             <span>
-              {locale === 'ar'
-                ? `رقم التواصل الرسمي المسموح به للفرع: ${review.locations.contact_phone}`
-                : `Official allowed branch contact: ${review.locations.contact_phone}`}
+              {locale === 'ar' ? (
+                <>
+                  رقم التواصل الرسمي المسموح به للفرع:{' '}
+                  <bdi dir="ltr" className="font-mono font-bold text-text">
+                    {review.locations.contact_phone}
+                  </bdi>
+                </>
+              ) : (
+                <>
+                  Official allowed branch contact:{' '}
+                  <bdi dir="ltr" className="font-mono font-bold text-text">
+                    {review.locations.contact_phone}
+                  </bdi>
+                </>
+              )}
             </span>
           </div>
         )}

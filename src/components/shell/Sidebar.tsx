@@ -44,28 +44,28 @@ export const NAV_ITEMS: NavItem[] = [
     id: 'brand',
     labelKey: 'navigation.brandVoice',
     defaultLabel: 'Brand Voice',
-    href: '/dashboard#brand',
+    href: '/dashboard/settings?tab=brand',
     icon: Sparkles,
   },
   {
     id: 'notifications',
     labelKey: 'navigation.notifications',
     defaultLabel: 'Notifications',
-    href: '/dashboard#notifications',
+    href: '/dashboard/settings?tab=notifications',
     icon: BellRing,
   },
   {
     id: 'locations',
     labelKey: 'navigation.locations',
     defaultLabel: 'Locations',
-    href: '/dashboard#locations',
+    href: '/dashboard/settings?tab=locations',
     icon: MapPin,
   },
   {
     id: 'settings',
     labelKey: 'navigation.settings',
     defaultLabel: 'Settings',
-    href: '/dashboard#settings',
+    href: '/dashboard/settings',
     icon: Settings,
   },
 ];
@@ -127,8 +127,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             const isActive =
               item.href === '/dashboard'
                 ? pathname === '/dashboard'
-                : item.href === '/dashboard/reviews'
+                : item.href.startsWith('/dashboard/reviews')
                 ? pathname.startsWith('/dashboard/reviews')
+                : item.href.startsWith('/dashboard/settings')
+                ? pathname.startsWith('/dashboard/settings')
                 : false;
             const label = t(item.labelKey) !== item.labelKey ? t(item.labelKey) : item.defaultLabel;
 

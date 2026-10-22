@@ -183,9 +183,9 @@ function LocationSelectorInner({
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
                 <span>
                   📞 Phone Override:{' '}
-                  <strong className="text-text font-mono">
+                  <bdi dir="ltr" className="text-text font-mono font-bold">
                     {activeLoc.contact_phone || 'Default (None)'}
-                  </strong>
+                  </bdi>
                 </span>
                 <span>
                   ✍️ Signature Override:{' '}

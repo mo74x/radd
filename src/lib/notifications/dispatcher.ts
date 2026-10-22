@@ -10,6 +10,8 @@ import {
   sendWhatsAppNotification,
   sendWhatsAppReconnectionAlert,
 } from './whatsapp';
+import { renderApprovalEmail } from './email-template';
+import { renderTelegramMessage } from './telegram-template';
 
 export interface NotificationPayload {
   business: BusinessRow;
@@ -76,21 +78,14 @@ export async function sendOwnerNotification(
 async function sendEmailNotification(
   payload: NotificationPayload
 ): Promise<NotificationResult> {
-  const { business, location, review, draft, approvalUrl, isRenewal } = payload;
-  const stars = '★'.repeat(review.rating) + '☆'.repeat(5 - review.rating);
-  const warningBadge = review.requires_careful_review
-    ? '⚠️ [Requires Careful Review] '
-    : '';
-  const renewalPrefix = isRenewal ? '🔄 [Renewed Link] ' : '';
-
-  const subject = `${renewalPrefix}${warningBadge}New ${review.rating}★ Review for ${location.display_name}`;
+  const { business, approvalUrl, isRenewal } = payload;
+  const rendered = renderApprovalEmail(payload);
 
   if (!hasLiveResendKey() || !business.notification_target) {
     console.log(
-      `[MOCK EMAIL${isRenewal ? ' (RENEWAL)' : ''} -> ${business.notification_target ?? 'owner'}] ${subject}\n` +
-        `  Reviewer : ${review.reviewer_name} (${stars})\n` +
-        `  Draft    : ${draft.body}\n` +
-        `  One-Tap  : ${approvalUrl}`
+      `[MOCK EMAIL${isRenewal ? ' (RENEWAL)' : ''} -> ${business.notification_target ?? 'owner'}] ${rendered.subject}\n` +
+        `  One-Tap : ${approvalUrl}\n` +
+        `---\n${rendered.text}`
     );
     return {
       channel: 'email',
@@ -102,46 +97,11 @@ async function sendEmailNotification(
 
   const resend = new Resend(process.env.RESEND_API_KEY);
   const { error } = await resend.emails.send({
-    from: process.env.EMAIL_FROM || 'Review Bot <onboarding@resend.dev>',
+    from: process.env.EMAIL_FROM || 'Radd <onboarding@resend.dev>',
     to: [business.notification_target],
-    subject,
-    html: `
-      <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px;">
-        <h2 style="margin-top: 0; color: #111827;">${location.display_name}</h2>
-        ${
-          isRenewal
-            ? `<div style="background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 14px;">
-                 <strong>🔄 رابط متجدد (Renewed Magic Link):</strong> تم إنشاء هذا الرابط الجديد بناءً على طلبك بعد انتهاء صلاحية الرابط القديم.
-               </div>`
-            : ''
-        }
-        <p style="font-size: 18px; margin: 8px 0;">
-          <strong style="color: #f59e0b;">${stars}</strong> by <strong>${review.reviewer_name || 'Customer'}</strong>
-        </p>
-        ${
-          review.requires_careful_review
-            ? `<div style="background: #fef2f2; color: #991b1b; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 14px;">
-                 <strong>⚠️ Flagged for careful review:</strong> ${
-                   review.flags.length ? review.flags.join(', ') : 'Low star rating'
-                 }
-               </div>`
-            : ''
-        }
-        <div style="background: #f9fafb; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
-          <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Customer Review:</div>
-          <div dir="auto" style="font-size: 15px; color: #1f2937;">${
-            review.text || '<em>(Star rating only — no comment)</em>'
-          }</div>
-        </div>
-        <div style="background: #ecfdf5; padding: 12px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #a7f3d0;">
-          <div style="font-size: 12px; color: #047857; margin-bottom: 4px;">Suggested Reply:</div>
-          <div dir="auto" style="font-size: 15px; color: #065f46;">${draft.body}</div>
-        </div>
-        <a href="${approvalUrl}" style="display: inline-block; background: #10b981; color: #ffffff; text-decoration: none; font-weight: 600; padding: 12px 20px; border-radius: 8px;">
-          Approve, Edit, or Skip in One Tap →
-        </a>
-      </div>
-    `,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
   });
 
   if (error) {
@@ -154,24 +114,13 @@ async function sendEmailNotification(
 async function sendTelegramNotification(
   payload: NotificationPayload
 ): Promise<NotificationResult> {
-  const { business, location, review, draft, approvalUrl, isRenewal } = payload;
-  const stars = '⭐'.repeat(review.rating);
-  const renewalHeader = isRenewal
-    ? `🔄 *[رابط متجدد / Renewed Magic Link]*\nتم إصدار رابط جديد بناءً على طلبك بعد انتهاء صلاحية الرابط السابق.\n\n`
-    : '';
-  const warningLine = review.requires_careful_review
-    ? `⚠️ *تنبيه: تقييم يحتاج لمراجعة دقيقة (${review.flags.join(', ') || 'تقييم منخفض'})*\n\n`
-    : '';
-
-  const messageText =
-    `${renewalHeader}${warningLine}📍 *${location.display_name}*\n` +
-    `${stars} من *${review.reviewer_name || 'عميل'}*\n\n` +
-    `💬 *التقييم:*\n${review.text || '(تقييم بالنجوم فقط بدون تعليق)'}\n\n` +
-    `✍️ *الرد المقترح:*\n${draft.body}`;
+  const { business, approvalUrl, isRenewal } = payload;
+  const rendered = renderTelegramMessage(payload);
 
   if (!hasLiveTelegramToken() || !business.notification_target) {
     console.log(
-      `[MOCK TELEGRAM${isRenewal ? ' (RENEWAL)' : ''} -> chat_id:${business.notification_target ?? 'unset'}]\n${messageText}\nLink: ${approvalUrl}`
+      `[MOCK TELEGRAM${isRenewal ? ' (RENEWAL)' : ''} -> chat_id:${business.notification_target ?? 'unset'}]\n` +
+        `${rendered.text}\nLink: ${approvalUrl}`
     );
     return {
       channel: 'telegram',
@@ -187,18 +136,9 @@ async function sendTelegramNotification(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: business.notification_target,
-      text: messageText,
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: '✅ موافقة أو تعديل الرد (One Tap)',
-              url: approvalUrl,
-            },
-          ],
-        ],
-      },
+      text: rendered.text,
+      parse_mode: rendered.parse_mode,
+      reply_markup: rendered.reply_markup,
     }),
   });
 
@@ -301,7 +241,7 @@ export async function sendReconnectionNotification(
 
   const resend = new Resend(process.env.RESEND_API_KEY);
   const { error } = await resend.emails.send({
-    from: process.env.EMAIL_FROM || 'Review Bot <onboarding@resend.dev>',
+    from: process.env.EMAIL_FROM || 'Radd <onboarding@resend.dev>',
     to: [business.notification_target],
     subject,
     html: `
@@ -319,7 +259,7 @@ export async function sendReconnectionNotification(
           Review polling and automated response publishing have been safely paused to prevent failed requests. Please reconnect your Google account to restore automated management.
         </p>
         <div style="margin: 24px 0 16px;">
-          <a href="${reconnectUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px; padding: 12px 24px; border-radius: 8px;">
+          <a href="${reconnectUrl}" style="display: inline-block; background: #0F5E63; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px; padding: 12px 24px; border-radius: 8px;">
             🔗 Reconnect Google Account (إعادة ربط الحساب) →
           </a>
         </div>

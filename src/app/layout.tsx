@@ -4,6 +4,7 @@ import './globals.css';
 import { DEFAULT_LOCALE, getDirection } from '@/lib/i18n';
 import { I18nProvider } from '@/lib/i18n/context';
 import { ToastProvider } from '@/components/ui/Toast';
+import { OfflineNotice } from '@/components/states/OfflineNotice';
 
 const cairo = Cairo({
   subsets: ['arabic', 'latin'],
@@ -36,6 +37,7 @@ export default function RootLayout({
         <I18nProvider initialLocale={DEFAULT_LOCALE}>
           <ToastProvider>
             {children}
+            <OfflineNotice />
           </ToastProvider>
         </I18nProvider>
       </body>
