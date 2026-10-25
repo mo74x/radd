@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { ReviewFlag, ReviewLanguage } from '@/types/database';
 import {
   CLASSIFIER_SYSTEM_PROMPT,
-  DEFAULT_CLAUDE_MODEL,
+  getClaudeModel,
   buildUserReviewPrompt,
 } from '@/lib/ai/prompts/v1';
 
@@ -128,7 +128,7 @@ export async function classifyReview(params: {
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const response = await anthropic.messages.create({
-      model: DEFAULT_CLAUDE_MODEL,
+      model: getClaudeModel(),
       max_tokens: 256,
       temperature: 0,
       system: CLASSIFIER_SYSTEM_PROMPT,

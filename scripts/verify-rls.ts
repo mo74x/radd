@@ -146,7 +146,7 @@ async function main() {
     review_id: bRevId,
     body: 'Thank you for visiting Tenant B Zamalek! We appreciate your support.',
     status: 'pending',
-    model: 'claude-3-5-haiku-latest',
+    model: 'claude-haiku-5-5',
     prompt_version: 'v1.0',
   });
   if (bDraftErr) throw new Error(`Failed to seed Tenant B draft: ${bDraftErr.message}`);

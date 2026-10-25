@@ -273,7 +273,7 @@ Plans are defined in `src/lib/billing/types.ts`. New businesses start on a 14-da
 | Styling | Tailwind CSS v4, CSS variables, Cairo (`next/font`), `lucide-react` icons |
 | Database and auth | Supabase (PostgreSQL, Row Level Security), `@supabase/ssr`, `@supabase/supabase-js` |
 | Server security | `server-only` isolation, Node.js `crypto` (AES-256-GCM, SHA-256) |
-| AI | Anthropic Claude (`@anthropic-ai/sdk`, model set by `CLAUDE_MODEL`) with a local simulator fallback |
+| AI | Anthropic Claude (`@anthropic-ai/sdk`, model set by `CLAUDE_MODEL`, default `claude-haiku-5-5`) with a local simulator fallback |
 | Google | Business Profile APIs over `fetch`, OAuth 2.0 with offline refresh tokens |
 | Notifications | Meta WhatsApp Cloud API, Telegram Bot API, Resend |
 | Billing | Paymob, Stripe, Fawry |
@@ -433,7 +433,7 @@ All variables are listed in [`.env.example`](.env.example).
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Live only | Google Cloud OAuth credentials |
 | `GOOGLE_REDIRECT_URI` | Live only | Must point to `/api/google/oauth/callback` |
 | `ANTHROPIC_API_KEY` | No (simulator fallback) | Claude API key |
-| `CLAUDE_MODEL` | No | Model ID (default `claude-3-5-haiku-latest`) |
+| `CLAUDE_MODEL` | No | Model ID (default `claude-haiku-5-5`) |
 | `RESEND_API_KEY` | No (mock fallback) | Resend API key |
 | `EMAIL_FROM` | No | Sender, default `Radd <onboarding@resend.dev>` |
 | `TELEGRAM_BOT_TOKEN` | No (mock fallback) | Telegram bot token from @BotFather |

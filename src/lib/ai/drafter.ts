@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BrandProfileRow, LocationRow, ReviewLanguage, ReviewRow } from '@/types/database';
 import {
-  DEFAULT_CLAUDE_MODEL,
+  getClaudeModel,
   PROMPT_VERSION,
   buildDrafterSystemPrompt,
   buildUserReviewPrompt,
@@ -80,7 +80,7 @@ export async function generateReviewDraft(params: {
     }
 
     const response = await anthropic.messages.create({
-      model: DEFAULT_CLAUDE_MODEL,
+      model: getClaudeModel(),
       max_tokens: 350,
       temperature: 0.4,
       system: systemPrompt,
@@ -101,7 +101,7 @@ export async function generateReviewDraft(params: {
 
     return {
       body,
-      model: DEFAULT_CLAUDE_MODEL,
+      model: getClaudeModel(),
       promptVersion: PROMPT_VERSION,
     };
   }

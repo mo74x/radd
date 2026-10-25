@@ -246,7 +246,7 @@ async function main() {
     review_id: testRevId,
     body: 'Draft to be purged',
     status: 'pending',
-    model: 'claude-3-5-haiku-latest',
+    model: 'claude-haiku-5-5',
     prompt_version: 'v1.0',
   });
   await supabaseAdmin.from('brand_profiles').insert({

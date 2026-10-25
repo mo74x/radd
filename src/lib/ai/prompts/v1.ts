@@ -1,7 +1,8 @@
 import { BrandProfileRow, LocationRow, ReviewLanguage } from '@/types/database';
 
 export const PROMPT_VERSION = 'v1.0.0';
-export const DEFAULT_CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-haiku-latest';
+import { DEFAULT_CLAUDE_MODEL, getClaudeModel } from '@/lib/ai/config';
+export { DEFAULT_CLAUDE_MODEL, getClaudeModel };
 
 export const CLASSIFIER_SYSTEM_PROMPT = `You are a security and classification filter for a Google Business Profile review responder in Egypt.
 Analyze the review inside <untrusted_review_data> tags.
