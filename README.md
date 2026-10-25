@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/mo74x/radd/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mo74x/radd/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16_App_Router-black?logo=nextdotjs">
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white">
