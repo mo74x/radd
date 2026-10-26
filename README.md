@@ -12,7 +12,7 @@
   <img alt="i18n" src="https://img.shields.io/badge/UI-Arabic_RTL_%C2%B7_English_LTR-0F5E63">
   <img alt="WhatsApp" src="https://img.shields.io/badge/WhatsApp-Cloud_API-25D366?logo=whatsapp&logoColor=white">
   <img alt="Billing" src="https://img.shields.io/badge/Billing-Paymob_%C2%B7_Stripe_%C2%B7_Fawry-00A3FF">
-  <img alt="Unit tests" src="https://img.shields.io/badge/unit_tests-82_passing-15803D">
+  <img alt="Unit tests" src="https://img.shields.io/badge/unit_tests-86_passing-15803D">
   <img alt="Eval suite" src="https://img.shields.io/badge/eval_suite-102_cases-F5A623">
 </p>
 
@@ -153,13 +153,15 @@ The UI is built on a small in-house design system (`src/components/ui/`) with Ta
 | **Accessibility** | Touch targets of at least 44px, visible focus rings, labelled icon buttons, `prefers-reduced-motion` respected, WCAG AA contrast targets. |
 | **Global states** | Branded inline-SVG illustrations for 404, 500, Google access revoked, trial ended, permission denied, expired / used links, and an offline notice. |
 
-### Developer preview pages
+### Developer preview pages (development only)
 
-| Route | What it shows |
-| :--- | :--- |
-| `/dev/design-system` | Every UI component in all its states, in light/dark and ar/en |
-| `/dev/email-preview` | The approval email (HTML and plain text) and the Telegram message, in Arabic, English, flagged and renewed-link variants |
-| `/approve/preview-normal` | The approval page with sample data. Other states: `preview-careful`, `preview-editing`, `preview-success`, `preview-skipped`, `preview-used`, `preview-failed`, `preview-expired`. These tokens only work outside production. |
+> **Note:** These routes are strictly gated for development and return a 404 (`notFound()`) in production environments.
+
+| Route | What it shows | Availability |
+| :--- | :--- | :--- |
+| `/dev/design-system` | Every UI component in all its states, in light/dark and ar/en | Development only |
+| `/dev/email-preview` | The approval email (HTML and plain text) and the Telegram message, in Arabic, English, flagged and renewed-link variants | Development only |
+| `/approve/preview-normal` | The approval page with sample data. Other states: `preview-careful`, `preview-editing`, `preview-success`, `preview-skipped`, `preview-used`, `preview-failed`, `preview-expired`. | Development only |
 
 ---
 
@@ -508,7 +510,7 @@ A typical setup uses Vercel for the app and Supabase for the database.
 | `/dashboard/reviews/[id]` | Review detail with draft vs. final comparison and audit trail | Signed in |
 | `/dashboard/settings` | Brand voice, notifications, locations, Google connection, account, billing | Signed in |
 | `/approve/[token]` | One-tap approval page (mobile-first, no login) | Token |
-| `/dev/design-system` · `/dev/email-preview` | Developer previews | See [Limitations](#limitations) |
+| `/dev/design-system` · `/dev/email-preview` | Developer previews (design system catalog & email preview) | Development only (`NODE_ENV !== 'production'`) |
 
 ### API
 
@@ -528,7 +530,7 @@ A typical setup uses Vercel for the app and Supabase for the database.
 ## Verification and evaluation
 
 ```bash
-npm test               # unit and integration tests (82 passing, 20 suites)
+npm test               # unit and integration tests (86 passing, 23 suites)
 npm run test:e2e       # Playwright smoke tests, mobile 390px + desktop 1280px
 npx tsc --noEmit       # type check
 npm run lint           # ESLint
@@ -554,7 +556,7 @@ Extra verification scripts (run with `npx tsx --env-file=.env scripts/<name>.ts`
 
 | Suite | Cases | Focus | Result |
 | :--- | :-: | :--- | :-: |
-| **Unit / integration** (`tests/*.test.ts`) | 82 | Paymob HMAC, Stripe and Fawry signatures, WhatsApp payloads, AES-256-GCM, log scrubbing, Google API fixtures (429 / 404 / 409), lifecycle, validator bypass attempts | 82 / 82 |
+| **Unit / integration** (`tests/*.test.ts`) | 86 | Paymob HMAC, Stripe and Fawry signatures, WhatsApp payloads, AES-256-GCM, log scrubbing, Google API fixtures (429 / 404 / 409), lifecycle, dev route gating & SEO, validator bypass attempts | 86 / 86 |
 | **E2E smoke** (`tests/e2e/*.spec.ts`) | 16 × 2 viewports | Approval states, inline editing, careful-review banner, language switch, auth forms, previews | — |
 | **Prompt evaluation** (`eval-prompts.ts`) | 30 | Dialect fidelity, star-only handling, injection defense, compensation traps | 30 / 30 |
 | **Real Egyptian reviews** (`eval-real-reviews.ts`) | 72 | Café, restaurant and clinic reviews, tourist complaints, mixed English | 72 / 72 |
@@ -726,7 +728,7 @@ Links expire after 72 hours. Opening an expired link offers a one-tap renewal, s
 ## Limitations
 
 - **Provider approvals:** live Google Business Profile access needs Google API access and OAuth verification, and WhatsApp templates need Meta review. Until then, use the simulators.
-- **Developer pages:** `/dev/design-system` and `/dev/email-preview` are not gated by `NODE_ENV`. Remove them or protect them before a public launch. (The `preview-*` approval tokens are already disabled in production.)
+- **Developer pages:** `/dev/design-system` and `/dev/email-preview` are server-gated to return `notFound()` (404) when `NODE_ENV === 'production'`. They are also excluded from `robots.txt` and `sitemap.xml`. The `preview-*` approval tokens are likewise disabled in production.
 - **UI images:** the dashboard and approval images in this README are design mockups, not screenshots.
 - **Lighthouse:** performance and accessibility scores have not been recorded yet.
 - **Evaluation:** the suites were written and iterated by the project author. They guard against regressions but are not an independent benchmark.
