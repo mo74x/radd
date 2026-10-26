@@ -15,6 +15,7 @@ env:
   TOKEN_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   CRON_SECRET: ci_cron_secret_test_value
   GOOGLE_API_MODE: mock
+  ALLOW_MOCK_IN_PRODUCTION: "true"
 
 jobs:
   build-and-test:

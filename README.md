@@ -12,7 +12,7 @@
   <img alt="i18n" src="https://img.shields.io/badge/UI-Arabic_RTL_%C2%B7_English_LTR-0F5E63">
   <img alt="WhatsApp" src="https://img.shields.io/badge/WhatsApp-Cloud_API-25D366?logo=whatsapp&logoColor=white">
   <img alt="Billing" src="https://img.shields.io/badge/Billing-Paymob_%C2%B7_Stripe_%C2%B7_Fawry-00A3FF">
-  <img alt="Unit tests" src="https://img.shields.io/badge/unit_tests-86_passing-15803D">
+  <img alt="Unit tests" src="https://img.shields.io/badge/unit_tests-92_passing-15803D">
   <img alt="Eval suite" src="https://img.shields.io/badge/eval_suite-102_cases-F5A623">
 </p>
 
@@ -432,6 +432,7 @@ All variables are listed in [`.env.example`](.env.example).
 | `TOKEN_ENCRYPTION_KEY` | Yes | 64-character hex string (32 bytes) for AES-256-GCM |
 | `CRON_SECRET` | Yes | Bearer token protecting `/api/cron/poll-reviews` |
 | `GOOGLE_API_MODE` | No | `live` to call real Google APIs, otherwise mock (`GOOGLE_MODE` also accepted) |
+| `ALLOW_MOCK_IN_PRODUCTION` | No | Set to `true` to allow mock mode during production/staging preview |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Live only | Google Cloud OAuth credentials |
 | `GOOGLE_REDIRECT_URI` | Live only | Must point to `/api/google/oauth/callback` |
 | `ANTHROPIC_API_KEY` | No (simulator fallback) | Claude API key |
@@ -482,15 +483,68 @@ Meta periodically retires old Graph API versions, so check that the version used
 
 ## Deployment
 
-A typical setup uses Vercel for the app and Supabase for the database.
+Radd is production-ready for deployment on **Vercel** with a hosted **Supabase** database.
 
-1. **Supabase:** create a project and apply the six migrations in order.
-2. **Environment:** add the variables from [Configuration](#configuration). Keep `SUPABASE_SERVICE_ROLE_KEY` and `TOKEN_ENCRYPTION_KEY` server-only.
-3. **Google OAuth:** register `https://<your-domain>/api/google/oauth/callback` as a redirect URI and set `GOOGLE_API_MODE=live`.
-4. **Cron:** schedule `/api/cron/poll-reviews` every few minutes. Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` automatically when `CRON_SECRET` is set.
-5. **Billing webhooks:** point each gateway at `/api/billing/webhook/<gateway>` (`paymob`, `stripe`, `fawry`) and set the matching secrets.
-6. **Notifications:** configure the Telegram bot, the Resend sending domain (`EMAIL_FROM`), and the WhatsApp template.
-7. **Smoke test:** run `npm run build`, then approve one simulated review end to end.
+### 1. Database (Hosted Supabase)
+1. Create a project in [Supabase](https://supabase.com).
+2. Execute the migrations in order from `supabase/migrations/`:
+   - `0001_init.sql` (Schema, multi-tenant RLS, crypto functions, indexes)
+   - `0002_billing.sql` (Billing status and entitlements)
+   - `0003_billing_enum.sql` (Subscription billing status types)
+   - `0004_billing_unpaid.sql` (Unpaid status transitions)
+   - `0005_location_leases.sql` (Row-level location poll leases)
+   - `0006_billing_subscriptions.sql` (Multi-gateway subscriptions table)
+3. Copy your project settings:
+   - **Project URL** (`NEXT_PUBLIC_SUPABASE_URL`)
+   - **Anon public key** (`NEXT_PUBLIC_SUPABASE_ANON_KEY`)
+   - **Service role secret key** (`SUPABASE_SERVICE_ROLE_KEY`)
+
+### 2. Environment Variables & Secret Generation
+Generate your production secrets securely:
+```bash
+# 64-character hex key for AES-256-GCM token encryption
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# Random bearer secret for cron triggers
+node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+```
+
+Configure the required variables in your hosting environment (Vercel Project Settings > Environment Variables):
+- `NEXT_PUBLIC_APP_URL` and `APP_URL`: set to your canonical domain (e.g., `https://radd.app`).
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+- `TOKEN_ENCRYPTION_KEY`: 64-character hex string.
+- `CRON_SECRET`: bearer secret for `/api/cron/poll-reviews`.
+- `GOOGLE_API_MODE`: set to `live` for production (or set `ALLOW_MOCK_IN_PRODUCTION=true` if deploying a pilot staging demo).
+- Optional provider keys: `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `TELEGRAM_BOT_TOKEN`, `META_WHATSAPP_TOKEN`, `PAYMOB_API_KEY`, `STRIPE_SECRET_KEY`.
+
+> **Environment Validation:** Radd runs Zod-based environment validation during `next build` and on server start via Next.js instrumentation (`src/instrumentation.ts`). In production, missing required variables or invalid encryption keys cause the build/server to fail with clear variable names while never exposing secret values.
+
+### 3. Vercel Cron Configuration
+The repository includes `vercel.json` which automatically configures review polling every 5 minutes:
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/poll-reviews",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
+```
+Vercel Crons invoke `/api/cron/poll-reviews` via HTTP `GET` with the `Authorization: Bearer <CRON_SECRET>` header. The endpoint validates authorization in constant time using `crypto.timingSafeEqual`.
+
+### 4. Security Headers & Privacy
+Production responses automatically include strict security headers via `next.config.ts`:
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: strict-origin-when-cross-origin` (with `/approve/:token` strictly isolated as `no-referrer`)
+- `X-Frame-Options: DENY` (and CSP `frame-ancestors 'none'`)
+- `Permissions-Policy: camera=(), microphone=(), geolocation=(), browsing-topics=()`
+- `Content-Security-Policy-Report-Only` (safe report-only CSP baseline)
+- One-tap approval pages (`/approve/*`) and draft APIs enforce `Cache-Control: no-store` and `X-Robots-Tag: noindex, nofollow, noarchive`.
+
+### 5. Health Check & Monitoring
+- **`/api/health`**: Returns JSON with service status, active version, timestamp, latency, and a cheap database connectivity check. Does not leak credentials.
 
 ---
 
@@ -524,13 +578,14 @@ A typical setup uses Vercel for the app and Supabase for the database.
 | `/api/dashboard/settings` | Zod-validated settings updates, Google disconnect and data deletion | Session |
 | `/api/dashboard/locations` | Per-location overrides (phone, signature) | Session |
 | `/api/billing/webhook/[gateway]` | Paymob, Stripe and Fawry webhooks | Gateway signature |
+| `/api/health` | Uptime health check and cheap database ping | Public |
 
 ---
 
 ## Verification and evaluation
 
 ```bash
-npm test               # unit and integration tests (86 passing, 23 suites)
+npm test               # unit and integration tests (92 passing, 26 suites)
 npm run test:e2e       # Playwright smoke tests, mobile 390px + desktop 1280px
 npx tsc --noEmit       # type check
 npm run lint           # ESLint
@@ -556,7 +611,7 @@ Extra verification scripts (run with `npx tsx --env-file=.env scripts/<name>.ts`
 
 | Suite | Cases | Focus | Result |
 | :--- | :-: | :--- | :-: |
-| **Unit / integration** (`tests/*.test.ts`) | 86 | Paymob HMAC, Stripe and Fawry signatures, WhatsApp payloads, AES-256-GCM, log scrubbing, Google API fixtures (429 / 404 / 409), lifecycle, dev route gating & SEO, validator bypass attempts | 86 / 86 |
+| **Unit / integration** (`tests/*.test.ts`) | 92 | Paymob HMAC, Stripe and Fawry signatures, WhatsApp payloads, AES-256-GCM, log scrubbing, Google API fixtures (429 / 404 / 409), lifecycle, dev route gating & SEO, env validation & headers, validator bypass attempts | 92 / 92 |
 | **E2E smoke** (`tests/e2e/*.spec.ts`) | 16 × 2 viewports | Approval states, inline editing, careful-review banner, language switch, auth forms, previews | — |
 | **Prompt evaluation** (`eval-prompts.ts`) | 30 | Dialect fidelity, star-only handling, injection defense, compensation traps | 30 / 30 |
 | **Real Egyptian reviews** (`eval-real-reviews.ts`) | 72 | Café, restaurant and clinic reviews, tourist complaints, mixed English | 72 / 72 |
