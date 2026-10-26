@@ -469,15 +469,37 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://your-domain.com/api/cron/po
 
 ## WhatsApp template setup
 
-The WhatsApp channel sends a message template with a dynamic URL button. Create it in Meta Business Manager (WhatsApp Manager, Message templates) before enabling the channel:
+The WhatsApp notification channel delivers review alerts via Meta Cloud API using an approved message template with a one-tap dynamic URL approval button.
 
-1. **Name and language:** match `WHATSAPP_TEMPLATE_NAME` (default `review_reply_approval`) and `WHATSAPP_TEMPLATE_LANG` (default `ar`) exactly.
-2. **Body:** short text announcing a new review, with variables for the values the dispatcher sends. Check `src/lib/notifications/whatsapp.ts` for the exact parameters and their order.
-3. **Button:** a dynamic **URL** button with a base URL ending in `/approve/{{1}}` on your `NEXT_PUBLIC_APP_URL` domain. The dispatcher fills `{{1}}` with the approval token.
-4. **Submit for review.** Meta reviews templates and decides their category. Until approval, test with the console mock.
-5. **Credentials:** create a system-user token with WhatsApp messaging permission and set `META_WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID`.
+For complete copy, variable definitions, and step-by-step Meta Business Manager instructions, see the dedicated [**WhatsApp Template Setup Guide**](docs/whatsapp-template.md).
 
-Meta periodically retires old Graph API versions, so check that the version used in the code is still supported.
+### Summary of Template Requirements
+
+1. **Environment Variables:**
+   - `WHATSAPP_TEMPLATE_NAME`: template name registered in Meta (default `review_reply_approval`).
+   - `WHATSAPP_TEMPLATE_LANG`: template language code (default `ar`, or `en`).
+   - `META_WHATSAPP_TOKEN`: Meta system-user access token with `whatsapp_business_messaging` permission.
+   - `WHATSAPP_PHONE_NUMBER_ID`: WhatsApp Business Account phone number ID.
+
+2. **Template Components & Exact Parameter Order:**
+   - **Header (Text):** Location name (`{{1}}`).
+   - **Body (Text):** Expects exactly 4 parameters in this order:
+     - `{{1}}`: Reviewer name (e.g., `أحمد محمود` or `عميل`).
+     - `{{2}}`: Rating and star glyphs (e.g., `5★ (★★★★★)`).
+     - `{{3}}`: Clean review snippet up to 140 chars (or `(تقييم بدون تعليق)`).
+     - `{{4}}`: Proposed AI draft reply up to 280 chars.
+   - **Button (Dynamic URL):**
+     - Type: Visit Website (Dynamic URL).
+     - Website Base URL in Meta Manager: `https://<your-domain>/{{1}}` (where `{{1}}` is the dynamic suffix).
+     - The code supplies `approve/<token>` as the dynamic parameter value.
+
+3. **Graph API Version:**
+   - Radd sends requests to Meta Graph API **`v21.0`** (`https://graph.facebook.com/v21.0/${phoneId}/messages`).
+   - *Note:* Meta periodically retires older Graph API versions. Verify on Meta's developer portal that `v21.0` remains actively supported.
+
+4. **Testing with the Console Mock:**
+   - Leave `META_WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` empty in `.env`.
+   - Notifications will automatically print to your terminal console with full review details, draft text, and a clickable local one-tap approval link (`http://localhost:3000/approve/<token>`).
 
 ---
 
