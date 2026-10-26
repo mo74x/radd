@@ -37,7 +37,22 @@ export default function AuthLayout({
       </main>
 
       {/* Footer */}
-      <footer className="py-6 text-center text-xs text-text-muted">
+      <footer className="py-6 text-center text-xs text-text-muted space-y-2">
+        <div className="flex items-center justify-center gap-4">
+          <Link
+            href="/privacy"
+            className="hover:text-text hover:underline transition-colors"
+          >
+            سياسة الخصوصية / Privacy
+          </Link>
+          <span>•</span>
+          <Link
+            href="/terms"
+            className="hover:text-text hover:underline transition-colors"
+          >
+            شروط الاستخدام / Terms
+          </Link>
+        </div>
         <p>© 2026 Radd (ردّ) • All rights reserved</p>
       </footer>
     </div>

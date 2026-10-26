@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Sparkles,
@@ -18,6 +19,7 @@ import {
   Phone,
   Save,
   LucideIcon,
+  ExternalLink,
 } from 'lucide-react';
 import {
   Button,
@@ -87,7 +89,7 @@ export const SettingsClientView: React.FC<SettingsClientViewProps> = ({
 }) => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { t, isRtl } = useI18n();
+  const { t, isRtl, locale } = useI18n();
 
   // Active Tab State (can be driven by ?tab= param)
   const initialTab = (searchParams.get('tab') as SettingsTab) || 'brand';
@@ -759,6 +761,34 @@ export const SettingsClientView: React.FC<SettingsClientViewProps> = ({
                       {t('onboarding.purgeDataButton')}
                     </Button>
                   </div>
+
+                  <div className="pt-3 border-t border-danger/20 flex flex-wrap items-center justify-between gap-2 text-xs text-text-muted">
+                    <span>
+                      {locale === 'ar'
+                        ? 'الالتزام بسياسة بيانات مستخدمي خدمات Google API والخصوصية'
+                        : 'Adherence to Google API User Data Policy & Privacy Standards'}
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <Link
+                        href="/privacy"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline font-medium inline-flex items-center gap-1"
+                      >
+                        <span>{t('landing.privacy')}</span>
+                        <Icon icon={ExternalLink} size={12} />
+                      </Link>
+                      <Link
+                        href="/terms"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-text-muted hover:text-text hover:underline font-medium inline-flex items-center gap-1"
+                      >
+                        <span>{t('landing.terms')}</span>
+                        <Icon icon={ExternalLink} size={12} />
+                      </Link>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -873,6 +903,32 @@ export const SettingsClientView: React.FC<SettingsClientViewProps> = ({
             </Card>
           </div>
         )}
+
+        {/* Global Settings Legal Links Footer */}
+        <div className="pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-text-muted">
+          <p>© 2026 Radd (ردّ) • All rights reserved</p>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-text hover:underline inline-flex items-center gap-1 transition-colors"
+            >
+              <span>{t('landing.privacy')}</span>
+              <Icon icon={ExternalLink} size={12} />
+            </Link>
+            <span>•</span>
+            <Link
+              href="/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-text hover:underline inline-flex items-center gap-1 transition-colors"
+            >
+              <span>{t('landing.terms')}</span>
+              <Icon icon={ExternalLink} size={12} />
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   );

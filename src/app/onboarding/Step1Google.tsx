@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import {
   Building2,
   CheckCircle2,
@@ -376,19 +377,24 @@ export const Step1Google: React.FC<Step1GoogleProps> = ({
               {t('onboarding.privacyManageDesc')}
             </p>
             <div className="flex flex-wrap items-center gap-3">
-              <a
-                href="#privacy-policy"
-                onClick={(e) => {
-                  e.preventDefault();
-                  alert(
-                    'Radd adheres strictly to the Google API Services User Data Policy, including the Limited Use requirements.'
-                  );
-                }}
+              <Link
+                href="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="text-primary hover:underline font-medium inline-flex items-center gap-1"
               >
                 {t('onboarding.privacyPolicyLink')}
                 <Icon icon={ExternalLink} size={12} />
-              </a>
+              </Link>
+              <Link
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-text-muted hover:text-text hover:underline font-medium inline-flex items-center gap-1"
+              >
+                {t('landing.terms')}
+                <Icon icon={ExternalLink} size={12} />
+              </Link>
 
               {businessId && (
                 <Button

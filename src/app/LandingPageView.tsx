@@ -729,7 +729,24 @@ export const LandingPageView: React.FC = () => {
           </div>
 
           <div className="pt-6 border-t border-border/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-start">
-            <p>© 2026 {t('landing.copyright')}</p>
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <p>© 2026 {t('landing.copyright')}</p>
+              <div className="flex items-center gap-3">
+                <Link
+                  href="/privacy"
+                  className="hover:text-text hover:underline transition-colors"
+                >
+                  {t('landing.privacy')}
+                </Link>
+                <span>•</span>
+                <Link
+                  href="/terms"
+                  className="hover:text-text hover:underline transition-colors"
+                >
+                  {t('landing.terms')}
+                </Link>
+              </div>
+            </div>
             <p className="text-[11px] max-w-xl text-text-muted/70">
               {t('landing.disclaimer')}
             </p>

@@ -181,7 +181,24 @@ export default function SignUpPage() {
           </div>
 
           <p className="text-[11px] text-text-muted leading-relaxed">
-            {t('auth.termsAgreement')}
+            {t('auth.termsAgreement')}{' '}
+            <span className="inline-flex items-center gap-1.5 ms-1">
+              <Link
+                href="/terms"
+                target="_blank"
+                className="text-primary hover:underline font-medium"
+              >
+                {t('landing.terms')}
+              </Link>
+              <span>•</span>
+              <Link
+                href="/privacy"
+                target="_blank"
+                className="text-primary hover:underline font-medium"
+              >
+                {t('landing.privacy')}
+              </Link>
+            </span>
           </p>
         </CardContent>
 
